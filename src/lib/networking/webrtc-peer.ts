@@ -42,49 +42,29 @@ export class WebRTCPeer {
       ...this.config,
       config: {
         iceServers: [
-          // Public STUN servers
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-
-          // Xirsys TURN server - ensure credentials are valid
+          // New configuration based on user request
           {
-            username:
-              'YewABlKHAzhfOBZ7GDSJ8376mkdgSSIN_Ze0bI4QnuZFePM8uRzuLHaoglOIuurUAAAAAGgYo3N2bGFkdGE=',
-            credential: '9becf21e-29a5-11f0-9a18-a68a84931b85',
-            urls: [
-              'turn:fr-turn8.xirsys.com:80?transport=udp',
-              'turn:fr-turn8.xirsys.com:3478?transport=udp',
-              'turn:fr-turn8.xirsys.com:80?transport=tcp',
-              'turn:fr-turn8.xirsys.com:3478?transport=tcp',
-              'turns:fr-turn8.xirsys.com:443?transport=tcp',
-              'turns:fr-turn8.xirsys.com:5349?transport=tcp',
-            ],
-          },
-
-          // Free public TURN servers - multiple options for reliability
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
+            urls: 'stun:stun.relay.metered.ca:80',
           },
           {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
+            urls: 'turn:global.relay.metered.ca:80',
+            username: '5df6a73f882e0b2c6e7ff098',
+            credential: '4SS6CksF518Kj/zH',
           },
           {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
+            urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+            username: '5df6a73f882e0b2c6e7ff098',
+            credential: '4SS6CksF518Kj/zH',
           },
-          // Google's TURN servers
           {
-            urls: 'turn:relay.webrtc.org:3478',
-            username: 'webrtc',
-            credential: 'webrtc',
+            urls: 'turn:global.relay.metered.ca:443',
+            username: '5df6a73f882e0b2c6e7ff098',
+            credential: '4SS6CksF518Kj/zH',
+          },
+          {
+            urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+            username: '5df6a73f882e0b2c6e7ff098',
+            credential: '4SS6CksF518Kj/zH',
           },
         ],
         // Additional ICE configuration to improve connectivity
