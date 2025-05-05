@@ -2,12 +2,16 @@ from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import os
 from dotenv import load_dotenv
+import eventlet
+
+# Patch standard library with eventlet for production use
+eventlet.monkey_patch()
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key')
-socketio = SocketIO(app, cors_allowed_origins='*')
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
 
 # Store connected users
 users = {}
@@ -105,4 +109,14 @@ def index():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+
+    # Check if we're in development mode
+    is_dev = os.getenv('FLASK_ENV') == 'development'
+
+    if is_dev:
+        # Use Werkzeug for development
+        socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)
+    else:
+        # Use eventlet for production
+        # No need to call socketio.run() - eventlet will handle it
+        eventlet.wsgi.server(eventlet.listen(('0.0.0.0', port)), app)

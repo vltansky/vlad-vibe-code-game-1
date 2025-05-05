@@ -75,7 +75,7 @@ export class GameNetworkManager {
   private isHost = false;
 
   constructor(
-    signalServerUrl: string = 'http://localhost:8080',
+    signalServerUrl: string = 'http://0.0.0.0:8080',
     mode: NetworkMode = NetworkMode.HYBRID
   ) {
     this.signalClient = new SignalingClient(signalServerUrl);
