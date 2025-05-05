@@ -1,107 +1,75 @@
+import eventlet
+# Required for eventlet production server - MUST be called first!
+eventlet.monkey_patch()
+
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import os
 from dotenv import load_dotenv
-import eventlet
-
-# Patch standard library with eventlet for production use
-eventlet.monkey_patch()
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key')
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+# Use an environment variable for the secret key in production
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'development-key')
 
-# Store connected users
-users = {}
-# Store active rooms
+# Specify async_mode='eventlet' for production
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Basic room and user management (replace with more robust logic if needed)
 rooms = {}
+users = {}
 
 @socketio.on('connect')
-def handle_connect():
+def on_connect():
+    users[request.sid] = {'room': None}
     print(f'Client connected: {request.sid}')
-    users[request.sid] = {
-        'id': request.sid,
-        'room': None
-    }
 
 @socketio.on('disconnect')
-def handle_disconnect():
-    print(f'Client disconnected: {request.sid}')
-    user = users.get(request.sid)
+def on_disconnect():
+    user = users.pop(request.sid, None)
     if user and user['room']:
-        leave_room(user['room'])
-        rooms.setdefault(user['room'], []).remove(request.sid)
-        emit('user_disconnected', {'userId': request.sid}, to=user['room'])
+        room_id = user['room']
+        leave_room(room_id)
+        if room_id in rooms and request.sid in rooms[room_id]:
+            rooms[room_id].remove(request.sid)
+            if not rooms[room_id]: # Clean up empty room
+                del rooms[room_id]
+            # Notify others
+            emit('user_left', {'userId': request.sid}, to=room_id)
+    print(f'Client disconnected: {request.sid}')
 
-    if request.sid in users:
-        del users[request.sid]
 
 @socketio.on('join_room')
 def handle_join_room(data):
     room_id = data.get('roomId')
-    if not room_id:
-        emit('error', {'message': 'Room ID is required'})
-        return
+    if not room_id: return # Handle error
 
-    # Join the room
     join_room(room_id)
     users[request.sid]['room'] = room_id
 
-    # Add user to room
-    if room_id not in rooms:
-        rooms[room_id] = []
+    # Add user to room list
+    if room_id not in rooms: rooms[room_id] = []
     rooms[room_id].append(request.sid)
 
+    # Send current users to new joiner
+    emit('room_users', {'users': rooms[room_id]})
+
     # Notify others in the room
-    emit('user_joined', {
-        'userId': request.sid,
-        'userCount': len(rooms[room_id])
-    }, to=room_id)
-
-    # Send current users in the room to the new user
-    emit('room_users', {
-        'users': rooms[room_id],
-        'userCount': len(rooms[room_id])
-    })
-
-@socketio.on('leave_room')
-def handle_leave_room(data):
-    room_id = data.get('roomId') or users[request.sid].get('room')
-    if not room_id:
-        return
-
-    leave_room(room_id)
-    users[request.sid]['room'] = None
-
-    if room_id in rooms and request.sid in rooms[room_id]:
-        rooms[room_id].remove(request.sid)
-
-        # Notify others
-        emit('user_left', {'userId': request.sid}, to=room_id)
-
-        # Clean up empty rooms
-        if len(rooms[room_id]) == 0:
-            del rooms[room_id]
+    emit('user_joined', {'userId': request.sid}, to=room_id, include_self=False)
 
 @socketio.on('signal')
 def handle_signal(data):
     target_id = data.get('targetId')
-    if target_id and target_id in users:
-        emit('signal', {
-            'userId': request.sid,
-            'signal': data.get('signal')
-        }, to=target_id)
+    if target_id:
+        # Relay WebRTC signaling data between specific peers
+        emit('signal', {'userId': request.sid, 'signal': data.get('signal')}, to=target_id)
 
 @socketio.on('broadcast')
 def handle_broadcast(data):
-    room_id = users[request.sid].get('room')
+    room_id = users.get(request.sid, {}).get('room')
     if room_id:
-        emit('broadcast', {
-            'userId': request.sid,
-            'data': data.get('data')
-        }, to=room_id, include_self=False)
+        emit('broadcast', {'userId': request.sid, 'data': data.get('data')}, to=room_id, include_self=False)
 
 @app.route('/')
 def index():
@@ -109,14 +77,7 @@ def index():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
-
-    # Check if we're in development mode
-    is_dev = os.getenv('FLASK_ENV') == 'development'
-
-    if is_dev:
-        # Use Werkzeug for development
-        socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)
-    else:
-        # Use eventlet for production
-        # No need to call socketio.run() - eventlet will handle it
-        eventlet.wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
+    print(f"Starting server on port {port}")
+    # Use eventlet WSGI server for production
+    # socketio.run(app, ...) is only for development
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
