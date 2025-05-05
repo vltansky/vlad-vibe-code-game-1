@@ -419,6 +419,16 @@ export const useGameStore = create<GameState>((set, get) => {
                   partialUpdate.position.y || 0,
                   partialUpdate.position.z || 0
                 );
+
+                // Check if this is a respawn notification (score reset to 0 + position change)
+                if (partialUpdate.score !== undefined && partialUpdate.score === 0) {
+                  console.log(`[GameStore] Detected respawn for player ${targetPlayerId}`);
+
+                  // Apply respawn physics update for this remote player
+                  import('@/systems/physics').then(({ respawnPlayerBody }) => {
+                    respawnPlayerBody(targetPlayerId, updatedPlayerState.position);
+                  });
+                }
               }
 
               if (partialUpdate.rotation) {
@@ -517,6 +527,65 @@ export const useGameStore = create<GameState>((set, get) => {
           import('@/systems/physics').then(({ applyBombEffect }) => {
             applyBombEffect(new Vector3(position.x, position.y, position.z), playerId);
           });
+        }
+
+        // Handle game reset notification
+        if (data.type === 'game_reset') {
+          const { initiator, timestamp } = data.payload as {
+            initiator: string;
+            timestamp: number;
+          };
+
+          console.log(
+            `[GameStore] Game reset initiated by ${initiator} at ${new Date(timestamp).toLocaleTimeString()}`
+          );
+
+          // Only process if we're not the initiator (they already reset their own game)
+          if (initiator !== get().localPlayerId) {
+            // Reset all scores to 0 and respawn players to random positions
+            const { players, localPlayerId } = get();
+            const updatedPlayers = { ...players };
+
+            Object.keys(updatedPlayers).forEach((playerId) => {
+              // Reset score
+              updatedPlayers[playerId].score = 0;
+
+              // Generate new random position for respawn
+              const newPosition = getRandomCornerPosition();
+              updatedPlayers[playerId].position.copy(newPosition);
+
+              // Reset king status
+              updatedPlayers[playerId].isKing = false;
+            });
+
+            set({
+              players: updatedPlayers,
+              gameWinner: null,
+              currentKingId: null,
+              kingZoneOccupants: [],
+            });
+
+            // Respawn local player's physics body
+            if (localPlayerId) {
+              const localPlayerPosition = updatedPlayers[localPlayerId].position;
+
+              // Respawn physics body via physics system
+              import('@/systems/physics').then(({ respawnPlayerBody }) => {
+                respawnPlayerBody(localPlayerId, localPlayerPosition);
+              });
+
+              // Broadcasting our new position to others
+              const { peerManager } = get();
+              if (peerManager) {
+                peerManager.broadcast('player_state_update', {
+                  id: localPlayerId,
+                  score: 0,
+                  position: localPlayerPosition,
+                  isKing: false,
+                });
+              }
+            }
+          }
         }
       });
 
@@ -660,22 +729,54 @@ export const useGameStore = create<GameState>((set, get) => {
     },
 
     resetScores: () => {
-      const { players, localPlayerId } = get();
+      const { players, localPlayerId, peerManager } = get();
 
-      // Reset all scores to 0
+      // Reset all scores to 0 and respawn players to random positions
       const updatedPlayers = { ...players };
       Object.keys(updatedPlayers).forEach((playerId) => {
+        // Reset score
         updatedPlayers[playerId].score = 0;
+
+        // Generate new random position for respawn
+        const newPosition = getRandomCornerPosition();
+        updatedPlayers[playerId].position.copy(newPosition);
+
+        // Reset king status
+        updatedPlayers[playerId].isKing = false;
       });
 
       set({
         players: updatedPlayers,
         gameWinner: null,
+        currentKingId: null,
+        kingZoneOccupants: [],
       });
 
-      // Broadcast score reset for local player
+      // Respawn local player's physics body
       if (localPlayerId) {
-        updateAndBroadcastPlayerState({ id: localPlayerId, score: 0 });
+        const localPlayerPosition = updatedPlayers[localPlayerId].position;
+
+        // Respawn physics body via physics system
+        import('@/systems/physics').then(({ respawnPlayerBody }) => {
+          respawnPlayerBody(localPlayerId, localPlayerPosition);
+        });
+
+        // Send game reset announcement to all peers
+        if (peerManager) {
+          // First, broadcast a special game_reset message to notify all players
+          peerManager.broadcast('game_reset', {
+            initiator: localPlayerId,
+            timestamp: Date.now(),
+          });
+
+          // Then broadcast position update for local player
+          peerManager.broadcast('player_state_update', {
+            id: localPlayerId,
+            score: 0,
+            position: localPlayerPosition,
+            isKing: false,
+          });
+        }
       }
     },
 

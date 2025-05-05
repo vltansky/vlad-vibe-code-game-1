@@ -1059,3 +1059,37 @@ export function getCollisionMask(type: 'player' | 'npc' | 'trigger' | 'all'): nu
       return ALL_GROUPS;
   }
 }
+
+// Respawn a player's physics body at a new position
+export function respawnPlayerBody(playerId: string, position: Vector3) {
+  console.log(`[Physics] Respawning player ${playerId} at position:`, position);
+
+  if (!world) {
+    console.error('[Physics] Cannot respawn player - physics world not initialized');
+    return;
+  }
+
+  // Get existing player body
+  const body = playerBodies[playerId];
+
+  if (!body) {
+    console.error(`[Physics] Cannot respawn player ${playerId} - body not found`);
+    return;
+  }
+
+  // Reset position
+  body.position.set(position.x, position.y, position.z);
+
+  // Reset velocities
+  body.velocity.setZero();
+  body.angularVelocity.setZero();
+
+  // Wake up the body
+  body.wakeUp();
+
+  // Reset any forces
+  body.force.setZero();
+  body.torque.setZero();
+
+  console.log(`[Physics] Player ${playerId} respawned successfully`);
+}
