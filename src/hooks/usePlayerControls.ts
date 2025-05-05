@@ -55,7 +55,14 @@ export function usePlayerControls() {
           }
           break;
         case 'KeyF':
-          // F key for push ability
+          // F key for bomb ability
+          if (gameState.canUseBomb()) {
+            // Execute bomb immediately
+            gameState.useBombAbility();
+          }
+          break;
+        case 'KeyP':
+          // P key for push ability (changed from F to avoid conflict)
           if (gameState.canUsePush()) {
             // Execute push immediately
             gameState.usePushAbility();

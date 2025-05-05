@@ -86,7 +86,7 @@ function createMaterials() {
 
   wallMaterial = new CANNON.Material('wallMaterial');
   wallMaterial.friction = 0.3;
-  wallMaterial.restitution = 0.4;
+  wallMaterial.restitution = 0.8;
 
   iceMaterial = new CANNON.Material('iceMaterial');
   iceMaterial.friction = 0.05;
@@ -156,6 +156,10 @@ function createWalls(mapBounds: Box3) {
     position: new CANNON.Vec3(0, WALL_HEIGHT / 2, -MAP_SIZE / 2 - WALL_THICKNESS / 2),
   });
   northWallBody.addShape(northWallShape);
+
+  // Set user data for wall identification in collision events
+  northWallBody.userData = { type: 'wall', id: 'north' };
+
   world.addBody(northWallBody);
   wallBodies.push(northWallBody);
 
@@ -170,6 +174,10 @@ function createWalls(mapBounds: Box3) {
     position: new CANNON.Vec3(0, WALL_HEIGHT / 2, MAP_SIZE / 2 + WALL_THICKNESS / 2),
   });
   southWallBody.addShape(southWallShape);
+
+  // Set user data for wall identification in collision events
+  southWallBody.userData = { type: 'wall', id: 'south' };
+
   world.addBody(southWallBody);
   wallBodies.push(southWallBody);
 
@@ -184,6 +192,10 @@ function createWalls(mapBounds: Box3) {
     position: new CANNON.Vec3(MAP_SIZE / 2 + WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0),
   });
   eastWallBody.addShape(eastWallShape);
+
+  // Set user data for wall identification in collision events
+  eastWallBody.userData = { type: 'wall', id: 'east' };
+
   world.addBody(eastWallBody);
   wallBodies.push(eastWallBody);
 
@@ -198,8 +210,75 @@ function createWalls(mapBounds: Box3) {
     position: new CANNON.Vec3(-MAP_SIZE / 2 - WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0),
   });
   westWallBody.addShape(westWallShape);
+
+  // Set user data for wall identification in collision events
+  westWallBody.userData = { type: 'wall', id: 'west' };
+
   world.addBody(westWallBody);
   wallBodies.push(westWallBody);
+
+  // Setup collision detection for all walls
+  setupWallCollisionEvents();
+}
+
+// Add collision event handlers for walls
+function setupWallCollisionEvents() {
+  if (!world) return;
+
+  // Add a global collision event listener for the world
+  world.addEventListener('beginContact', (event) => {
+    const bodyA = event.bodyA;
+    const bodyB = event.bodyB;
+
+    // Check if this collision involves a wall
+    const isWallA = bodyA.userData && bodyA.userData.type === 'wall';
+    const isWallB = bodyB.userData && bodyB.userData.type === 'wall';
+
+    if (isWallA || isWallB) {
+      // Get the wall and the other body
+      const wall = isWallA ? bodyA : bodyB;
+      const otherBody = isWallA ? bodyB : bodyA;
+
+      // Apply additional bounce force on impact
+      if (otherBody.mass > 0) {
+        // Make sure it's not another static body
+        const bounceMultiplier = 1.3; // Extra bounce force
+        const relativeVelocity = new CANNON.Vec3();
+
+        // Calculate relative velocity
+        if (isWallA) {
+          relativeVelocity.copy(otherBody.velocity);
+        } else {
+          relativeVelocity.copy(otherBody.velocity).scale(-1);
+        }
+
+        // Reflect the velocity based on wall normal
+        const wallId = wall.userData.id;
+        const bounceForce = new CANNON.Vec3();
+
+        switch (wallId) {
+          case 'north':
+            bounceForce.set(0, 0, Math.abs(relativeVelocity.z) * bounceMultiplier);
+            break;
+          case 'south':
+            bounceForce.set(0, 0, -Math.abs(relativeVelocity.z) * bounceMultiplier);
+            break;
+          case 'east':
+            bounceForce.set(-Math.abs(relativeVelocity.x) * bounceMultiplier, 0, 0);
+            break;
+          case 'west':
+            bounceForce.set(Math.abs(relativeVelocity.x) * bounceMultiplier, 0, 0);
+            break;
+        }
+
+        // Apply the bounce force
+        otherBody.applyImpulse(bounceForce);
+
+        // Add a small upward force for more dynamic bounces
+        otherBody.applyImpulse(new CANNON.Vec3(0, 2, 0));
+      }
+    }
+  });
 }
 
 // Create corner blockers to prevent players from escaping at corners
@@ -318,49 +397,60 @@ function createObstacles() {
   }
 }
 
-// Create contact materials between different surfaces
+// Add contact materials for material interactions
 function createContactMaterials() {
   if (!world) return;
 
-  // Import the player material from physics system
+  // Import the player material from physics.ts
   import('./physics').then(({ getPlayerMaterial }) => {
     const playerMaterial = getPlayerMaterial();
-    if (!playerMaterial) return;
+    if (!playerMaterial) {
+      console.error('Player material not ready');
+      return;
+    }
 
-    // Player-Ground contact
-    const playerGroundContact = new CANNON.ContactMaterial(playerMaterial, groundMaterial, {
+    // Wall-Player contact - Bouncy collision
+    const wallPlayerContact = new CANNON.ContactMaterial(wallMaterial, playerMaterial, {
+      friction: 0.2,
+      restitution: 1.2, // Increased from default for extra bouncy walls
+      contactEquationStiffness: 1e8, // Higher stiffness for more immediate bounce
+      contactEquationRelaxation: 3, // Lower relaxation for more responsive bounce
+    });
+    world!.addContactMaterial(wallPlayerContact);
+
+    // Ground-Player contact - Normal movement
+    const groundPlayerContact = new CANNON.ContactMaterial(groundMaterial, playerMaterial, {
+      friction: 0.3,
+      restitution: 0.1,
+    });
+    world!.addContactMaterial(groundPlayerContact);
+
+    // Ice-Player contact - Slippery movement
+    const icePlayerContact = new CANNON.ContactMaterial(iceMaterial, playerMaterial, {
+      friction: 0.05,
+      restitution: 0.2,
+      contactEquationStiffness: 1e7,
+      contactEquationRelaxation: 5,
+    });
+    world!.addContactMaterial(icePlayerContact);
+
+    // Sticky-Player contact - Lots of friction
+    const stickyPlayerContact = new CANNON.ContactMaterial(stickyMaterial, playerMaterial, {
+      friction: 0.9,
+      restitution: 0.05,
+      contactEquationStiffness: 1e7,
+      contactEquationRelaxation: 3,
+    });
+    world!.addContactMaterial(stickyPlayerContact);
+
+    // Ramp-Player contact
+    const rampPlayerContact = new CANNON.ContactMaterial(rampMaterial, playerMaterial, {
       friction: 0.4,
       restitution: 0.3,
     });
-    world!.addContactMaterial(playerGroundContact);
+    world!.addContactMaterial(rampPlayerContact);
 
-    // Player-Ice contact
-    const playerIceContact = new CANNON.ContactMaterial(playerMaterial, iceMaterial, {
-      friction: 0.05,
-      restitution: 0.1,
-    });
-    world!.addContactMaterial(playerIceContact);
-
-    // Player-Sticky contact
-    const playerStickyContact = new CANNON.ContactMaterial(playerMaterial, stickyMaterial, {
-      friction: 0.8,
-      restitution: 0.05,
-    });
-    world!.addContactMaterial(playerStickyContact);
-
-    // Player-Wall contact
-    const playerWallContact = new CANNON.ContactMaterial(playerMaterial, wallMaterial, {
-      friction: 0.3,
-      restitution: 0.6,
-    });
-    world!.addContactMaterial(playerWallContact);
-
-    // Player-Ramp contact
-    const playerRampContact = new CANNON.ContactMaterial(playerMaterial, rampMaterial, {
-      friction: 0.3,
-      restitution: 0.2,
-    });
-    world!.addContactMaterial(playerRampContact);
+    console.log('Contact materials created');
   });
 }
 

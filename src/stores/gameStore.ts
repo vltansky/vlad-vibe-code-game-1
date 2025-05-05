@@ -17,6 +17,7 @@ export type PlayerState = {
   score: number; // Track player score
   isKing: boolean; // Whether player is the current king
   lastPushTime: number; // Last time player used push ability
+  lastBombTime: number; // Last time player used bomb ability
 };
 
 // Game state
@@ -59,10 +60,15 @@ export type GameState = {
   // Push mechanic
   usePushAbility: () => void;
   canUsePush: () => boolean;
+
+  // Bomb mechanic
+  useBombAbility: () => void;
+  canUseBomb: () => boolean;
 };
 
 // Constants
 const PUSH_COOLDOWN = 4000; // 4 seconds between pushes
+const BOMB_COOLDOWN = 10000; // 10 seconds between bombs
 const WINNING_SCORE = 60; // 60 points to win (1 minute as king)
 const CONNECTION_TIMEOUT = 15000; // 15 seconds connection timeout
 
@@ -193,6 +199,7 @@ export const useGameStore = create<GameState>((set, get) => {
             score: 0, // Initial score is 0
             isKing: false, // Not king by default
             lastPushTime: 0, // Never used push initially
+            lastBombTime: 0, // Never used bomb initially
           };
 
           // *** Call createPlayerBody AFTER setting initial state ***
@@ -314,6 +321,7 @@ export const useGameStore = create<GameState>((set, get) => {
             score: playerState.score || 0,
             isKing: playerState.isKing || false,
             lastPushTime: playerState.lastPushTime || 0,
+            lastBombTime: playerState.lastBombTime || 0,
           };
 
           set({ players: updatedPlayers });
@@ -388,6 +396,19 @@ export const useGameStore = create<GameState>((set, get) => {
               new Vector3(direction.x, direction.y, direction.z),
               playerId
             );
+          });
+        }
+
+        // Handle bomb notifications from other players
+        if (data.type === 'bomb_ability_used') {
+          const { position, playerId } = data.payload as {
+            position: { x: number; y: number; z: number };
+            playerId: string;
+          };
+
+          // Import physics system to apply bomb effect
+          import('@/systems/physics').then(({ applyBombEffect }) => {
+            applyBombEffect(new Vector3(position.x, position.y, position.z), playerId);
           });
         }
       });
@@ -474,7 +495,6 @@ export const useGameStore = create<GameState>((set, get) => {
         if (currentKingId !== newKingId) {
           // Update old king (if any)
           if (currentKingId && players[currentKingId]) {
-            const oldKing = players[currentKingId];
             updateAndBroadcastPlayerState({ id: currentKingId, isKing: false });
           }
 
@@ -486,8 +506,7 @@ export const useGameStore = create<GameState>((set, get) => {
       // If no players or multiple players in zone, no one is king
       else if (currentKingId) {
         // Remove king status from current king
-        const oldKing = players[currentKingId];
-        if (oldKing) {
+        if (players[currentKingId]) {
           updateAndBroadcastPlayerState({ id: currentKingId, isKing: false });
         }
         set({ currentKingId: null });
@@ -591,6 +610,53 @@ export const useGameStore = create<GameState>((set, get) => {
 
       const localPlayer = players[localPlayerId];
       return Date.now() - localPlayer.lastPushTime >= PUSH_COOLDOWN;
+    },
+
+    // Bomb mechanic
+    useBombAbility: () => {
+      const { localPlayerId, players, peerManager } = get();
+      if (!localPlayerId || !peerManager) return;
+
+      const localPlayer = players[localPlayerId];
+      const currentTime = Date.now();
+
+      // Check cooldown
+      if (currentTime - localPlayer.lastBombTime < BOMB_COOLDOWN) {
+        return; // Still on cooldown
+      }
+
+      // Update last bomb time
+      const updatedPlayers = {
+        ...players,
+        [localPlayerId]: {
+          ...localPlayer,
+          lastBombTime: currentTime,
+        },
+      };
+      set({ players: updatedPlayers });
+
+      // Apply bomb locally through physics system
+      import('@/systems/physics').then(({ applyBombEffect }) => {
+        applyBombEffect(localPlayer.position, localPlayerId);
+      });
+
+      // Broadcast bomb action to all peers
+      peerManager.broadcast('bomb_ability_used', {
+        playerId: localPlayerId,
+        position: {
+          x: localPlayer.position.x,
+          y: localPlayer.position.y,
+          z: localPlayer.position.z,
+        },
+      });
+    },
+
+    canUseBomb: () => {
+      const { localPlayerId, players } = get();
+      if (!localPlayerId) return false;
+
+      const localPlayer = players[localPlayerId];
+      return Date.now() - (localPlayer.lastBombTime || 0) >= BOMB_COOLDOWN;
     },
   };
 });

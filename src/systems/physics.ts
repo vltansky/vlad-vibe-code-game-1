@@ -335,6 +335,45 @@ export function applyPushEffect(position: Vector3, direction: Vector3, excludePl
   });
 }
 
+// Bomb explosion effect with radial force
+export function applyBombEffect(position: Vector3, excludePlayerId: string) {
+  if (!world) return;
+
+  const BOMB_RADIUS = 5; // Larger radius than push
+  const BOMB_FORCE = 60; // Stronger force than push
+  const UPWARD_BIAS = 0.3; // Add some upward force to make players "jump" from explosion
+
+  // Iterate through all player bodies
+  Object.entries(playerBodies).forEach(([playerId, body]) => {
+    // Skip the player who used the bomb
+    if (playerId === excludePlayerId) return;
+
+    // Calculate distance from bomb origin
+    const bodyPos = body.position;
+    const distVector = new Vector3(bodyPos.x, bodyPos.y, bodyPos.z).sub(position);
+    const distance = distVector.length();
+
+    // If within bomb radius, apply force
+    if (distance <= BOMB_RADIUS) {
+      // Calculate force magnitude (stronger closer to center)
+      const forceMagnitude = BOMB_FORCE * (1 - distance / BOMB_RADIUS);
+
+      // Calculate force direction - purely radial (away from explosion)
+      const forceDirection = distVector.clone().normalize();
+
+      // Add upward bias
+      forceDirection.y += UPWARD_BIAS;
+      forceDirection.normalize().multiplyScalar(forceMagnitude);
+
+      // Apply impulse to affected player
+      body.applyImpulse(
+        new CANNON.Vec3(forceDirection.x, forceDirection.y, forceDirection.z),
+        new CANNON.Vec3(bodyPos.x, bodyPos.y, bodyPos.z)
+      );
+    }
+  });
+}
+
 // Apply force to a player's body
 export function applyForceToPlayer(playerId: string, force: Vector3) {
   const body = playerBodies[playerId];

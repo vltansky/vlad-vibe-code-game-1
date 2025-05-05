@@ -27,16 +27,40 @@ P2P multiplayer 3D game with physics-based ball movement using WebRTC.
 
 - WASD/Arrows: Move
 - Space: Jump (1s cooldown)
+- F: Bomb explosion effect (10s cooldown)
+- P: Push ability (4s cooldown)
 - Physics: Damping (0.4), friction, nickname
+
+### Special Abilities
+
+#### Bomb Effect
+
+- Triggered by pressing F key
+- Creates radial explosion that pushes nearby players away
+- Stronger force than the push ability (60 vs 40)
+- Larger radius of effect (5m vs 3m)
+- Adds upward force component to make players "jump" from explosion
+- 10-second cooldown between uses
+- Visual feedback with expanding, fading sphere
+
+#### Push Ability
+
+- Triggered by pressing P key
+- Directional force that pushes players in the direction the player is facing
+- 4-second cooldown between uses
 
 ### Environment
 
 - Surfaces: Grass (med friction), Ice (low), Sticky (high)
 - Center platform, ramp, 5 circular obstacles
-- Follow## Physics
+- Follow
+
+## Physics
+
 - Cannon.js: Collisions
 - Custom materials: Ice, sticky, standard
 - Damping (0.4 linear/angular)
+- Explosion physics with radial force
 
 ### UI
 
@@ -57,6 +81,7 @@ P2P multiplayer 3D game with physics-based ball movement using WebRTC.
 2. WebRTC for direct peer-to-peer communication
 3. Automatic fallback to Socket.IO if WebRTC connection fails
 4. Position/rotation updates sent via unreliable data channel for lower latency
+5. Special abilities (bomb, push) synchronized across all clients
 
 ### Key Components
 
@@ -72,7 +97,7 @@ P2P multiplayer 3D game with physics-based ball movement using WebRTC.
 
 ## Code Structure
 
-- `src/components/`: Scene, GameObjects, GameMap, Player
+- `src/components/`: Scene, GameObjects, GameMap, Player, BombEffect
 - `src/hooks/`: usePlayerControls, useFollowCamera
 - `src/systems/`: physics, mapPhysics
 - `src/stores/`: gameStore (Zustand)
@@ -91,3 +116,4 @@ P2P multiplayer 3D game with physics-based ball movement using WebRTC.
 - Buffer-based interpolation system with configurable delay (default: 100ms)
 - SLERP quaternion interpolation for smooth rotations
 - Unreliable data channels prioritize latest updates over guaranteed delivery
+- Special abilities synchronized immediately for responsive gameplay
