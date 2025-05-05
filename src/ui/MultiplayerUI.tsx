@@ -2,9 +2,10 @@ import { useState, ChangeEvent, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useGameStore } from '@/stores/gameStore';
-import { Users, Gamepad2, AlertCircle, BookOpen, RefreshCw, Menu, X } from 'lucide-react';
+import { Users, Gamepad2, AlertCircle, BookOpen, RefreshCw, Menu, X, Trophy } from 'lucide-react';
 import { BombCooldownBar } from './BombCooldownBar';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
+import { Scoreboard } from './Scoreboard';
 
 // Use a fixed room code for all users
 const DEFAULT_ROOM = 'MAIN';
@@ -14,6 +15,7 @@ export function MultiplayerUI() {
   const [nickname, setNickname] = useState('');
   const [showControls, setShowControls] = useState(false);
   const [showGameRules, setShowGameRules] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
 
   const { isMobile } = useDeviceDetect();
@@ -28,6 +30,13 @@ export function MultiplayerUI() {
     const localPlayerId = state.localPlayerId;
     return localPlayerId ? state.players[localPlayerId]?.nickname || 'Player' : 'Player';
   });
+
+  // Show menu by default when not connected, especially on mobile
+  useEffect(() => {
+    if (!isConnected) {
+      setShowMenu(true);
+    }
+  }, [isConnected]);
 
   // Load nickname from localStorage on mount
   useEffect(() => {
@@ -69,12 +78,28 @@ export function MultiplayerUI() {
     if (!showControls && showGameRules) {
       setShowGameRules(false);
     }
+    if (!showControls && showLeaderboard) {
+      setShowLeaderboard(false);
+    }
   };
 
   const toggleGameRules = () => {
     setShowGameRules((prev) => !prev);
     if (!showGameRules && showControls) {
       setShowControls(false);
+    }
+    if (!showGameRules && showLeaderboard) {
+      setShowLeaderboard(false);
+    }
+  };
+
+  const toggleLeaderboard = () => {
+    setShowLeaderboard((prev) => !prev);
+    if (!showLeaderboard && showControls) {
+      setShowControls(false);
+    }
+    if (!showLeaderboard && showGameRules) {
+      setShowGameRules(false);
     }
   };
 
@@ -85,7 +110,7 @@ export function MultiplayerUI() {
   return (
     <>
       {/* Mobile menu toggle button */}
-      {isMobile && (
+      {isMobile && isConnected && (
         <button
           onClick={toggleMenu}
           className="absolute top-4 right-4 z-20 rounded-full bg-gray-800/80 p-2 shadow-md"
@@ -97,6 +122,9 @@ export function MultiplayerUI() {
           )}
         </button>
       )}
+
+      {/* Standalone Scoreboard - only shown when not in menu, connected, and not on mobile */}
+      {isConnected && !showMenu && !showLeaderboard && !isMobile && <Scoreboard />}
 
       {/* Main UI panel - conditionally shown on mobile */}
       {(!isMobile || showMenu) && (
@@ -178,6 +206,29 @@ export function MultiplayerUI() {
             <div
               className={`mt-6 space-y-3 border-t border-gray-700/50 pt-5 ${isMobile ? 'flex-1 overflow-auto' : ''}`}
             >
+              {/* Only show leaderboard button when connected */}
+              {isConnected && (
+                <div>
+                  <Button
+                    variant="outline"
+                    className={`w-full rounded-md border-gray-600 ${showLeaderboard ? 'bg-gray-700/80 text-gray-200' : 'bg-gray-800/60 text-gray-400'} py-2 text-xs font-medium transition-colors hover:bg-gray-700/70 hover:text-gray-300`}
+                    onClick={toggleLeaderboard}
+                  >
+                    <Trophy className="mr-2 h-4 w-4" />
+                    {showLeaderboard ? 'Hide Leaderboard' : 'Show Leaderboard'}
+                  </Button>
+
+                  {showLeaderboard && (
+                    <div className="mt-3 rounded-md border border-gray-700/70 bg-gray-800/50 p-4">
+                      {/* Embedding the Scoreboard component inside the menu */}
+                      <div className="scoreboard-container">
+                        <Scoreboard inMenu={true} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <Button
                   variant="outline"
@@ -200,29 +251,26 @@ export function MultiplayerUI() {
                         <p className="flex items-center gap-1.5">
                           <span className="key-indicator">🔼 Button</span> - Jump
                         </p>
-                        <p className="flex items-center gap-1.5">
-                          <span className="key-indicator">⚡️ Button</span> - Push (4s cooldown)
-                        </p>
-                        <p className="flex items-center gap-1.5">
-                          <span className="key-indicator">B Button</span> - Bomb (10s cooldown)
-                        </p>
-                        <div className="my-3 border-t border-gray-700/30"></div>
                       </>
-                    ) : null}
+                    ) : (
+                      <>
+                        <h3 className="mb-2 text-sm font-semibold text-gray-200">
+                          Keyboard Controls:
+                        </h3>
+                        <p className="flex items-center gap-1.5">
+                          <span className="key-indicator">WASD</span> - Move
+                        </p>
+                        <p className="flex items-center gap-1.5">
+                          <span className="key-indicator">Space</span> - Jump
+                        </p>
+                      </>
+                    )}
 
-                    <h3 className="mb-2 text-sm font-semibold text-gray-200">Keyboard Controls:</h3>
                     <p className="flex items-center gap-1.5">
-                      <span className="key-indicator">WASD</span> /
-                      <span className="key-indicator">Arrows</span>- Move
+                      <span className="key-indicator">E</span> - Push Wave
                     </p>
                     <p className="flex items-center gap-1.5">
-                      <span className="key-indicator">Space</span>- Jump
-                    </p>
-                    <p className="flex items-center gap-1.5">
-                      <span className="key-indicator">F</span>- Bomb Effect (10s cooldown)
-                    </p>
-                    <p className="flex items-center gap-1.5">
-                      <span className="key-indicator">P</span>- Push (4s cooldown)
+                      <span className="key-indicator">F</span> - Drop Bomb
                     </p>
                   </div>
                 )}
@@ -234,46 +282,47 @@ export function MultiplayerUI() {
                   className={`w-full rounded-md border-gray-600 ${showGameRules ? 'bg-gray-700/80 text-gray-200' : 'bg-gray-800/60 text-gray-400'} py-2 text-xs font-medium transition-colors hover:bg-gray-700/70 hover:text-gray-300`}
                   onClick={toggleGameRules}
                 >
+                  <BookOpen className="mr-2 h-4 w-4" />
                   {showGameRules ? 'Hide Game Rules' : 'Game Rules'}
                 </Button>
 
                 {showGameRules && (
-                  <div className="mt-3 space-y-2.5 rounded-md border border-gray-700/70 bg-gray-800/50 p-4 text-xs text-gray-400">
-                    <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-200">
-                      <BookOpen size={14} />
-                      Last Ball Standing
-                    </h3>
-                    <ul className="list-disc space-y-1 pl-5 text-gray-300">
-                      <li>Control the center zone to become the "king"</li>
-                      <li>Score 1 point per second while king</li>
-                      <li>First to 60 points wins</li>
+                  <div className="mt-3 space-y-3 rounded-md border border-gray-700/70 bg-gray-800/50 p-4 text-xs text-gray-300">
+                    <p>
+                      <span className="font-semibold text-gray-200">Objective:</span> Score points
+                      by knocking other players off the platform.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-gray-200">👑 King of the Hill:</span>{' '}
+                      Standing on the center platform makes you the king, earning extra points over
+                      time.
+                    </p>
+                    <p>
+                      <span className="font-semibold text-gray-200">Abilities:</span>
+                    </p>
+                    <ul className="ml-4 list-disc space-y-1.5">
                       <li>
-                        Use push (<span className="key-indicator-inline">F</span>) to knock others
-                        out
+                        <span className="text-gray-200">Push Wave (E):</span> Push nearby players
+                        away from you.
                       </li>
-                      <li>Only one player scores at a time</li>
+                      <li>
+                        <span className="text-gray-200">Bomb (F):</span> Drop a bomb that explodes
+                        after a short delay.
+                      </li>
                     </ul>
+                    <p>
+                      <span className="font-semibold text-gray-200">Winning:</span> First player to
+                      reach 60 points wins!
+                    </p>
                   </div>
                 )}
               </div>
-
-              {/* Mobile-only close menu button at bottom */}
-              {isMobile && (
-                <div className="mt-auto pt-4">
-                  <Button
-                    variant="outline"
-                    className="w-full rounded-md border-gray-600 bg-gray-800/60 py-2 text-xs font-medium transition-colors hover:bg-gray-700/70 hover:text-gray-300"
-                    onClick={toggleMenu}
-                  >
-                    Close Menu
-                  </Button>
-                </div>
-              )}
             </div>
           </div>
         </div>
       )}
 
+      {/* Bomb cooldown UI - only shown when connected */}
       {isConnected && <BombCooldownBar />}
 
       <style>{`
@@ -299,6 +348,9 @@ export function MultiplayerUI() {
           color: #d1d5db;
           line-height: 1;
           vertical-align: baseline;
+        }
+        .scoreboard-container {
+          min-height: 100px;
         }
       `}</style>
     </>

@@ -2,7 +2,11 @@ import { useGameStore } from '@/stores/gameStore';
 import { useState, useEffect } from 'react';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
 
-export function Scoreboard() {
+type ScoreboardProps = {
+  inMenu?: boolean;
+};
+
+export function Scoreboard({ inMenu = false }: ScoreboardProps) {
   const players = useGameStore((state) => state.players);
   const gameWinner = useGameStore((state) => state.gameWinner);
   const localPlayerId = useGameStore((state) => state.localPlayerId);
@@ -48,13 +52,19 @@ export function Scoreboard() {
         </div>
       )}
 
-      {/* Scoreboard - positioned differently for mobile and desktop */}
+      {/* Scoreboard - positioned differently based on inMenu and device type */}
       <div
-        className={` ${isMobile ? 'right-3 bottom-[140px] left-3 max-w-full' : 'top-3 left-3 w-64'} absolute z-10 rounded-xl bg-gray-900/85 p-4 shadow-xl backdrop-blur-sm`}
+        className={`${
+          inMenu ? 'relative w-full' : 'absolute top-3 left-3 hidden w-64 md:block'
+        } z-10 rounded-xl ${
+          inMenu ? 'bg-transparent p-0' : 'bg-gray-900/85 p-4 shadow-xl backdrop-blur-sm'
+        }`}
       >
-        <h2 className={`mb-3 ${isMobile ? 'text-lg' : 'text-xl'} font-bold text-white`}>
-          Leaderboard
-        </h2>
+        {!inMenu && (
+          <h2 className={`mb-3 ${isMobile ? 'text-lg' : 'text-xl'} font-bold text-white`}>
+            Leaderboard
+          </h2>
+        )}
 
         <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'space-y-3'}`}>
           {sortedPlayers.map((player) => (

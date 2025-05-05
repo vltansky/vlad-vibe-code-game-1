@@ -223,9 +223,9 @@ export function MobileControls() {
           ref={joystickRef}
         >
           {/* Static joystick indicator - always visible */}
-          <div className="absolute bottom-4 left-4 flex h-20 w-20 items-center justify-center rounded-full border border-gray-500/30 bg-gray-800/40">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-400/30 bg-gray-600/40">
-              <span className="text-xs text-white/60">joystick</span>
+          <div className="absolute bottom-4 left-4 flex h-20 w-20 items-center justify-center rounded-full border border-gray-500/50 bg-gray-800/60 shadow-lg">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-400/50 bg-gray-600/60 shadow-inner">
+              <div className="h-4 w-4 rounded-full bg-blue-500/70 shadow-md"></div>
             </div>
           </div>
 
@@ -234,7 +234,7 @@ export function MobileControls() {
             <>
               {/* Outer joystick circle */}
               <div
-                className="absolute h-24 w-24 rounded-full border border-gray-500/30 bg-gray-800/50"
+                className="absolute h-24 w-24 rounded-full border border-gray-500/50 bg-gray-800/70 shadow-lg"
                 style={{
                   left: joystick.origin.x - 48,
                   top: joystick.origin.y - 48,
@@ -242,13 +242,13 @@ export function MobileControls() {
               />
               {/* Inner joystick button */}
               <div
-                className="absolute flex h-16 w-16 items-center justify-center rounded-full border border-gray-400/40 bg-gray-700/70"
+                className="absolute flex h-16 w-16 items-center justify-center rounded-full border border-gray-400/60 bg-gray-700/80 shadow-lg"
                 style={{
                   left: joystick.position.x - 32,
                   top: joystick.position.y - 32,
                 }}
               >
-                <span className="text-white/60">move</span>
+                <div className="h-6 w-6 rounded-full bg-blue-500/90 shadow-md"></div>
               </div>
             </>
           )}
