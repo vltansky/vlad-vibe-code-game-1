@@ -1,6 +1,21 @@
 import * as CANNON from 'cannon-es';
 import { Box3, Vector3 } from 'three';
 
+// Define custom types for Cannon.js extensions
+interface CannonBodyWithUserData extends CANNON.Body {
+  userData?: {
+    type: string;
+    id: string;
+  };
+}
+
+// Define contact event interface
+interface BeginContactEvent {
+  bodyA: CannonBodyWithUserData;
+  bodyB: CannonBodyWithUserData;
+  contact: CANNON.ContactEquation;
+}
+
 // Physics materials
 let wallMaterial: CANNON.Material;
 let groundMaterial: CANNON.Material;
@@ -154,7 +169,8 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(0, WALL_HEIGHT / 2, -MAP_SIZE / 2 - WALL_THICKNESS / 2),
-  });
+  }) as CannonBodyWithUserData;
+
   northWallBody.addShape(northWallShape);
 
   // Set user data for wall identification in collision events
@@ -172,7 +188,8 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(0, WALL_HEIGHT / 2, MAP_SIZE / 2 + WALL_THICKNESS / 2),
-  });
+  }) as CannonBodyWithUserData;
+
   southWallBody.addShape(southWallShape);
 
   // Set user data for wall identification in collision events
@@ -190,7 +207,8 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(MAP_SIZE / 2 + WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0),
-  });
+  }) as CannonBodyWithUserData;
+
   eastWallBody.addShape(eastWallShape);
 
   // Set user data for wall identification in collision events
@@ -208,7 +226,8 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(-MAP_SIZE / 2 - WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0),
-  });
+  }) as CannonBodyWithUserData;
+
   westWallBody.addShape(westWallShape);
 
   // Set user data for wall identification in collision events
@@ -226,7 +245,7 @@ function setupWallCollisionEvents() {
   if (!world) return;
 
   // Add a global collision event listener for the world
-  world.addEventListener('beginContact', (event) => {
+  world.addEventListener('beginContact', (event: BeginContactEvent) => {
     const bodyA = event.bodyA;
     const bodyB = event.bodyB;
 
@@ -253,7 +272,7 @@ function setupWallCollisionEvents() {
         }
 
         // Reflect the velocity based on wall normal
-        const wallId = wall.userData.id;
+        const wallId = wall.userData?.id || '';
         const bounceForce = new CANNON.Vec3();
 
         switch (wallId) {
