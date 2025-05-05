@@ -129,6 +129,9 @@ export const useGameStore = create<GameState>((set, get) => {
       if (partialState.score !== undefined) broadcastPayload.score = updatedState.score;
       if (partialState.isKing !== undefined) broadcastPayload.isKing = updatedState.isKing;
 
+      // --- ADD LOG: Confirm broadcast ---
+      console.log(`[GameStore] Broadcasting player_state_update:`, broadcastPayload);
+      // --- END ADD LOG ---
       peerManager.broadcast('player_state_update', broadcastPayload);
     }
   };
@@ -243,6 +246,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
           // *** Call createPlayerBody AFTER setting initial state ***
           // This ensures the store has the player before physics tries to use it
+
           import('@/systems/physics').then(({ createPlayerBody }) => {
             createPlayerBody(localPlayerId, localPlayer.position);
           });
@@ -387,9 +391,15 @@ export const useGameStore = create<GameState>((set, get) => {
           });
 
           // *** Create physics body for the NEW remote player ***
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           import('@/systems/physics').then(({ createPlayerBody }) => {
             console.log(`[GameStore] Creating physics body for remote player ${peerId}`);
-            createPlayerBody(peerId, position);
+            // --- TEMP: Comment out physics body creation for remote player ---
+            // createPlayerBody(peerId, position);
+            console.log(
+              `[GameStore] TEMP: Skipped creating physics body for remote player ${peerId}`
+            );
+            // --- END TEMP ---
           });
           // *** END ***
         }
@@ -443,6 +453,15 @@ export const useGameStore = create<GameState>((set, get) => {
               if (updatedPlayerState.score >= get().winningScore && !get().gameWinner) {
                 set({ gameWinner: targetPlayerId });
               }
+
+              // --- REFINE LOG: Show *before* and *after* ---
+              console.log(
+                `[GameStore] Applying partial update for ${targetPlayerId}. Before:`,
+                currentPlayerState.position,
+                `After:`,
+                updatedPlayerState.position
+              );
+              // --- END REFINE LOG ---
 
               console.log(
                 `[GameStore] Partially updated player state for ${targetPlayerId}:`,

@@ -230,12 +230,6 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
       // This will also broadcast to other players
       updateLocalPlayerPosition(position);
       updateLocalPlayerRotation(rotation);
-    } else {
-      // For remote players, update directly without broadcasting
-      if (gameState.players[playerId]) {
-        gameState.players[playerId].position.copy(position);
-        gameState.players[playerId].rotation.copy(rotation);
-      }
     }
 
     // Check if player is still in king zone
