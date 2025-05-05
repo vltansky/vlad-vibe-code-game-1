@@ -271,48 +271,30 @@ function setupWallCollisionEvents() {
           relativeVelocity.copy(otherBody.velocity).scale(-1);
         }
 
-        // Only apply force if the impact is significant
-        const impactVelocity = relativeVelocity.length();
-        if (impactVelocity > 3) {
-          // Only create effects for more significant impacts
-          // Reflect the velocity based on wall normal
-          const wallId = wall.userData?.id || '';
-          const bounceForce = new CANNON.Vec3();
+        // Reflect the velocity based on wall normal
+        const wallId = wall.userData?.id || '';
+        const bounceForce = new CANNON.Vec3();
 
-          switch (wallId) {
-            case 'north':
-              bounceForce.set(0, 0, Math.abs(relativeVelocity.z) * bounceMultiplier);
-              break;
-            case 'south':
-              bounceForce.set(0, 0, -Math.abs(relativeVelocity.z) * bounceMultiplier);
-              break;
-            case 'east':
-              bounceForce.set(-Math.abs(relativeVelocity.x) * bounceMultiplier, 0, 0);
-              break;
-            case 'west':
-              bounceForce.set(Math.abs(relativeVelocity.x) * bounceMultiplier, 0, 0);
-              break;
-          }
-
-          // Apply the bounce force
-          otherBody.applyImpulse(bounceForce);
-
-          // Add a small upward force for more dynamic bounces
-          otherBody.applyImpulse(new CANNON.Vec3(0, 2, 0));
-
-          // Dispatch custom event for wall collision visuals
-          // This will be caught by the GameMap component to show visual effects
-          const wallCollisionEvent = new CustomEvent('wallCollision', {
-            detail: {
-              wallId,
-              position: wall.position,
-              velocity: impactVelocity,
-            },
-          });
-
-          // Dispatch event on window for components to listen
-          window.dispatchEvent(wallCollisionEvent);
+        switch (wallId) {
+          case 'north':
+            bounceForce.set(0, 0, Math.abs(relativeVelocity.z) * bounceMultiplier);
+            break;
+          case 'south':
+            bounceForce.set(0, 0, -Math.abs(relativeVelocity.z) * bounceMultiplier);
+            break;
+          case 'east':
+            bounceForce.set(-Math.abs(relativeVelocity.x) * bounceMultiplier, 0, 0);
+            break;
+          case 'west':
+            bounceForce.set(Math.abs(relativeVelocity.x) * bounceMultiplier, 0, 0);
+            break;
         }
+
+        // Apply the bounce force
+        otherBody.applyImpulse(bounceForce);
+
+        // Add a small upward force for more dynamic bounces
+        otherBody.applyImpulse(new CANNON.Vec3(0, 2, 0));
       }
     }
   });

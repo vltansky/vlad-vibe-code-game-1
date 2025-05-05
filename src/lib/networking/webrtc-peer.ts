@@ -42,12 +42,14 @@ export class WebRTCPeer {
       ...this.config,
       config: {
         iceServers: [
-          // Standard STUN servers
+          // Public STUN servers
           { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:global.stun.twilio.com:3478' },
-          { urls: ['stun:fr-turn8.xirsys.com'] },
 
-          // Primary TURN server from Xirsys
+          // Xirsys TURN server - ensure credentials are valid
           {
             username:
               'YewABlKHAzhfOBZ7GDSJ8376mkdgSSIN_Ze0bI4QnuZFePM8uRzuLHaoglOIuurUAAAAAGgYo3N2bGFkdGE=',
@@ -62,7 +64,7 @@ export class WebRTCPeer {
             ],
           },
 
-          // Additional public TURN servers as fallbacks
+          // Free public TURN servers - multiple options for reliability
           {
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -78,13 +80,18 @@ export class WebRTCPeer {
             username: 'openrelayproject',
             credential: 'openrelayproject',
           },
+          // Google's TURN servers
+          {
+            urls: 'turn:relay.webrtc.org:3478',
+            username: 'webrtc',
+            credential: 'webrtc',
+          },
         ],
-
         // Additional ICE configuration to improve connectivity
         iceCandidatePoolSize: 10, // Pre-gather ICE candidates
         iceTransportPolicy: 'all', // Try all connection methods (including relay)
         rtcpMuxPolicy: 'require', // Required for modern WebRTC
-
+        bundlePolicy: 'max-bundle', // Optimize connection setup
         ...this.config.config,
       },
     };
@@ -96,6 +103,9 @@ export class WebRTCPeer {
   initialize(signalClient: SignalingClient | null = null): Promise<string> {
     // Store signaling client for hybrid approach
     this.signalClient = signalClient;
+
+    // Test TURN servers before initializing
+    this.testTurnServers();
 
     return new Promise((resolve, reject) => {
       try {
@@ -116,7 +126,6 @@ export class WebRTCPeer {
             setTimeout(checkForPeerConnection, 100);
           }
         };
-
         checkForPeerConnection();
 
         this.peer.on('open', (id: string) => {
@@ -159,6 +168,7 @@ export class WebRTCPeer {
             console.error('1. STUN/TURN servers might be unreachable');
             console.error('2. One or both peers might be behind restrictive firewalls/NATs');
             console.error('3. Signaling may not be working correctly');
+            console.error('HINT: Try joining the same room with a different code');
           }
 
           this.listeners.error?.(error);
@@ -169,6 +179,70 @@ export class WebRTCPeer {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  /**
+   * Test TURN servers to ensure they are accessible and working
+   * This helps in diagnosing connection issues early
+   */
+  private testTurnServers(): void {
+    if (!this.debugEnabled) return;
+
+    const iceServers = this.config.config?.iceServers || [];
+    console.log(`[WebRTC] Testing ${iceServers.length} ICE servers...`);
+
+    iceServers.forEach((server, index) => {
+      const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+
+      urls.forEach((url) => {
+        const isTurn = url.toString().toLowerCase().startsWith('turn');
+        const isStun = url.toString().toLowerCase().startsWith('stun');
+
+        if (isTurn) {
+          console.log(`[WebRTC] TURN server #${index}: ${url}`);
+          console.log(`[WebRTC] TURN credentials: ${server.username ? 'Provided' : 'None'}`);
+        } else if (isStun) {
+          console.log(`[WebRTC] STUN server #${index}: ${url}`);
+        }
+      });
+    });
+
+    // Create a temporary connection to test ICE connectivity
+    try {
+      const pc = new RTCPeerConnection({
+        iceServers: this.config.config?.iceServers,
+        iceCandidatePoolSize: 2,
+      });
+
+      pc.createDataChannel('test');
+
+      pc.addEventListener('icegatheringstatechange', () => {
+        console.log(`[WebRTC] ICE gathering state: ${pc.iceGatheringState}`);
+        if (pc.iceGatheringState === 'complete') {
+          console.log('[WebRTC] ICE gathering complete. Test finished.');
+          // Close the test connection
+          setTimeout(() => pc.close(), 1000);
+        }
+      });
+
+      pc.addEventListener('icecandidate', (event) => {
+        if (event.candidate) {
+          const candidateType = event.candidate.candidate.split(' ')[7];
+          if (candidateType === 'relay') {
+            console.log('[WebRTC] ✅ TURN server working! Relay candidate found.');
+          } else if (candidateType === 'srflx') {
+            console.log('[WebRTC] ✅ STUN server working! srflx candidate found.');
+          }
+        }
+      });
+
+      // Start ICE gathering
+      pc.createOffer()
+        .then((offer) => pc.setLocalDescription(offer))
+        .catch((err) => console.error('[WebRTC] Error testing TURN:', err));
+    } catch (e) {
+      console.error('[WebRTC] Error setting up test connection:', e);
+    }
   }
 
   // Attach debug events to the RTCPeerConnection object

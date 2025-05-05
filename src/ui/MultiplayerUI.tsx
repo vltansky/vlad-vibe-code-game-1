@@ -4,6 +4,9 @@ import { Input } from '@/components/ui/input';
 import { useGameStore } from '@/stores/gameStore';
 import { Users, Gamepad2, AlertCircle, BookOpen, RefreshCw } from 'lucide-react';
 
+// Use a fixed room code for all users
+const DEFAULT_ROOM = 'MAIN';
+
 export function MultiplayerUI() {
   const [nickname, setNickname] = useState('');
   const [showControls, setShowControls] = useState(false);
@@ -22,7 +25,7 @@ export function MultiplayerUI() {
 
   const handleConnect = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    connect('game-room', nickname.trim() || 'Player');
+    connect(DEFAULT_ROOM, nickname.trim() || 'Player');
   };
 
   const handleRetry = () => {
@@ -143,7 +146,10 @@ export function MultiplayerUI() {
                   <span className="key-indicator">Space</span>- Jump
                 </p>
                 <p className="flex items-center gap-1.5">
-                  <span className="key-indicator">F</span>- Push (4s cooldown)
+                  <span className="key-indicator">F</span>- Bomb Effect (10s cooldown)
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <span className="key-indicator">P</span>- Push (4s cooldown)
                 </p>
               </div>
             )}

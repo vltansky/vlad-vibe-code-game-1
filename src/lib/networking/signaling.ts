@@ -48,17 +48,30 @@ export class SignalingClient {
     const useLocal = urlParams.get('local') === 'true';
 
     // Use provided serverUrl, or determine based on local parameter
-    const finalServerUrl =
-      serverUrl ||
-      (useLocal
-        ? 'http://localhost:8080'
-        : 'wss://vlad-vibe-code-game-1-production.up.railway.app');
+    // Ensure we use secure WebSocket connections for production
+    let finalServerUrl = serverUrl;
+
+    if (!finalServerUrl) {
+      if (useLocal) {
+        finalServerUrl = 'http://localhost:8080';
+      } else {
+        // Ensure we're using secure WebSocket for production
+        const railwayUrl = 'https://vlad-vibe-code-game-1-production.up.railway.app';
+
+        // Socket.IO will automatically convert https:// to wss:// internally
+        finalServerUrl = railwayUrl;
+
+        console.log('[Signaling] Using production server:', finalServerUrl);
+      }
+    }
 
     this.socket = io(finalServerUrl, {
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      // Explicitly set transports to ensure we try WebSocket first
+      transports: ['websocket', 'polling'],
     });
 
     // Set up default listeners
