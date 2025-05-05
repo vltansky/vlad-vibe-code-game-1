@@ -43,8 +43,20 @@ export class WebRTCPeer {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:global.stun.twilio.com:3478' },
-          // Add TURN servers here if needed for fallback
-          // { urls: 'turn:your-turn-server.com', username: 'username', credential: 'credential' }
+          { urls: ['stun:fr-turn8.xirsys.com'] },
+          {
+            username:
+              'YewABlKHAzhfOBZ7GDSJ8376mkdgSSIN_Ze0bI4QnuZFePM8uRzuLHaoglOIuurUAAAAAGgYo3N2bGFkdGE=',
+            credential: '9becf21e-29a5-11f0-9a18-a68a84931b85',
+            urls: [
+              'turn:fr-turn8.xirsys.com:80?transport=udp',
+              'turn:fr-turn8.xirsys.com:3478?transport=udp',
+              'turn:fr-turn8.xirsys.com:80?transport=tcp',
+              'turn:fr-turn8.xirsys.com:3478?transport=tcp',
+              'turns:fr-turn8.xirsys.com:443?transport=tcp',
+              'turns:fr-turn8.xirsys.com:5349?transport=tcp',
+            ],
+          },
         ],
         ...this.config.config,
       },
