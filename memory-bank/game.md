@@ -11,6 +11,7 @@ A peer-to-peer multiplayer 3D game where players control colorful balls in a phy
 - **Physics**: Cannon.js
 - **Networking**: WebRTC via simple-peer
 - **Signaling**: Socket.io (for initial connection only)
+  - Local development mode via `?local=true` URL parameter
 - **UI Components**: shadcn/ui
 
 ## Key Features
@@ -19,6 +20,8 @@ A peer-to-peer multiplayer 3D game where players control colorful balls in a phy
 
 - WebRTC peer-to-peer connections for low-latency direct communication
 - Socket.io backend for initial signaling and peer discovery
+  - Support for both production server and local development server
+  - Toggle between servers with `?local=true` URL parameter
 - Player state synchronization (position, velocity, nickname)
 - Network optimization with throttled updates (100ms interval)
 - Change detection to reduce bandwidth usage
