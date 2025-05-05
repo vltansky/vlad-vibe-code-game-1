@@ -115,27 +115,97 @@ enum NetworkMode {
 
 ### 1. Setup Signaling Server
 
+A basic Python Flask-SocketIO signaling server. **Note:** For production deployment (like on Railway), use a production WSGI server like `eventlet` or `gunicorn` instead of Flask's built-in development server.
+
 ```python
-# server.py (Python/Flask example)
-from flask import Flask
+# server.py (Python/Flask example with Eventlet for production)
+from flask import Flask, request
 from flask_socketio import SocketIO, join_room, leave_room, emit
+import os
+import eventlet
+
+# Required for eventlet production server
+eventlet.monkey_patch()
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Use an environment variable for the secret key in production
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'development-key')
+
+# Specify async_mode='eventlet' for production
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Basic room and user management (replace with more robust logic if needed)
+rooms = {}
+users = {}
+
+@socketio.on('connect')
+def on_connect():
+    users[request.sid] = {'room': None}
+    print(f'Client connected: {request.sid}')
+
+@socketio.on('disconnect')
+def on_disconnect():
+    user = users.pop(request.sid, None)
+    if user and user['room']:
+        room_id = user['room']
+        leave_room(room_id)
+        if room_id in rooms and request.sid in rooms[room_id]:
+            rooms[room_id].remove(request.sid)
+            if not rooms[room_id]: # Clean up empty room
+                del rooms[room_id]
+            # Notify others
+            emit('user_left', {'userId': request.sid}, to=room_id)
+    print(f'Client disconnected: {request.sid}')
+
 
 @socketio.on('join_room')
 def on_join(data):
-    room = data['room']
-    join_room(room)
-    # Notify others about new user
+    room_id = data.get('roomId')
+    if not room_id: return # Handle error
+
+    join_room(room_id)
+    users[request.sid]['room'] = room_id
+
+    # Add user to room list
+    if room_id not in rooms: rooms[room_id] = []
+    rooms[room_id].append(request.sid)
+
+    # Send current users to new joiner
+    emit('room_users', {'users': rooms[room_id]})
+
+    # Notify others in the room
+    emit('user_joined', {'userId': request.sid}, to=room_id, include_self=False)
 
 @socketio.on('signal')
 def on_signal(data):
-    # Relay WebRTC signaling data between peers
-    emit('signal', data, to=data['target'])
+    target_id = data.get('targetId')
+    if target_id:
+        # Relay WebRTC signaling data between specific peers
+        emit('signal', {'userId': request.sid, 'signal': data.get('signal')}, to=target_id)
+
+@socketio.on('broadcast')
+def handle_broadcast(data):
+    room_id = users.get(request.sid, {}).get('room')
+    if room_id:
+        emit('broadcast', {'userId': request.sid, 'data': data.get('data')}, to=room_id, include_self=False)
+
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=8080)
+    port = int(os.getenv('PORT', 8080))
+    print(f"Starting server on port {port}")
+    # Use eventlet WSGI server for production
+    # socketio.run(app, ...) is only for development
+    eventlet.wsgi.server(eventlet.listen(('0.0.0.0', port)), app)
+```
+
+Ensure you have `eventlet` and `python-dotenv` in your `requirements.txt`:
+
+```
+Flask>=2.0
+Flask-SocketIO>=5.0
+eventlet>=0.33  # Use a version compatible with your Python
+python-dotenv
+setuptools # Required by eventlet for newer Python versions
 ```
 
 ### 2. Create WebRTC Peer Implementation
@@ -157,8 +227,9 @@ if __name__ == '__main__':
 
 1. Create Railway.app account and project
 2. Connect repository or push code manually
-3. Configure environment variables
-4. Deploy with auto-scaling
+3. **Important:** Ensure your server code uses a production-ready WSGI server (like `eventlet` as shown above, or `gunicorn`) instead of the default Flask development server (`app.run` or `socketio.run`). Configure Railway's start command accordingly (e.g., `python server.py` if using the `eventlet.wsgi.server` pattern).
+4. Configure environment variables (e.g., `SECRET_KEY`).
+5. Deploy with auto-scaling
 
 ### Frontend
 
