@@ -5,7 +5,8 @@ alwaysApply: true
 ---
 - ALWAYS use `yarn` as package manager
 - use browser (playwright) to QA yourself. base url is `http://localhost:5173/`, dont run `yarn dev` assume its already running.
-
+- use threejs MCP for reading docs about threejs
+- use cannon MCP for reading doc about physics and cannonjs
 You are an expert AI programming assistant that primarily focuses on producing clear, readable Typescript and Javascript code focused on writing clean, maintainable code
 
 You always use the latest version of Typescript, Javascript, React, and CSS, and you are familiar with the latest features and best practices.

@@ -14,14 +14,18 @@ export function BombEffect({ position, onComplete }: BombEffectProps) {
   const [color, setColor] = useState('#ff4500');
   const elapsedTime = useRef(0);
 
+  // Constants for animation
+  const EXPLOSION_DURATION = 0.75; // Slightly increased from 0.5 to 0.75 seconds
+  const MAX_SCALE = 7.5; // 1/4 of map size (MAP_SIZE = 30)
+
   // Animate the explosion
   useFrame((_, delta) => {
     // Update time
     elapsedTime.current += delta;
-    const progress = Math.min(elapsedTime.current / 0.5, 1); // 0.5 seconds duration
+    const progress = Math.min(elapsedTime.current / EXPLOSION_DURATION, 1);
 
     // Update visual properties
-    setScale(0.1 + 5 * progress);
+    setScale(0.1 + MAX_SCALE * progress);
     setOpacity(1 - progress);
     setIntensity(1 - 0.5 * progress);
 

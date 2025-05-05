@@ -129,9 +129,6 @@ export const useGameStore = create<GameState>((set, get) => {
       if (partialState.score !== undefined) broadcastPayload.score = updatedState.score;
       if (partialState.isKing !== undefined) broadcastPayload.isKing = updatedState.isKing;
 
-      // --- ADD LOG: Confirm broadcast ---
-      console.log(`[GameStore] Broadcasting player_state_update:`, broadcastPayload);
-      // --- END ADD LOG ---
       peerManager.broadcast('player_state_update', broadcastPayload);
     }
   };
@@ -233,7 +230,7 @@ export const useGameStore = create<GameState>((set, get) => {
         if (localPlayerId) {
           const localPlayer: PlayerState = {
             id: localPlayerId,
-            position: new Vector3(0, 1, 0), // Spawn slightly above ground
+            position: getRandomCornerPosition(), // Spawn in a random corner instead of center
             rotation: new Quaternion(),
             color: getRandomColor(),
             isHost: false, // Will be set to true if first in room
@@ -391,15 +388,13 @@ export const useGameStore = create<GameState>((set, get) => {
           });
 
           // *** Create physics body for the NEW remote player ***
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          import('@/systems/physics').then(({ createPlayerBody }) => {
+
+          import('@/systems/physics').then(({ createPlayerBody, syncRemotePlayerPhysics }) => {
             console.log(`[GameStore] Creating physics body for remote player ${peerId}`);
-            // --- TEMP: Comment out physics body creation for remote player ---
-            // createPlayerBody(peerId, position);
-            console.log(
-              `[GameStore] TEMP: Skipped creating physics body for remote player ${peerId}`
-            );
-            // --- END TEMP ---
+            createPlayerBody(peerId, position);
+
+            // Also do an initial sync to make sure physics and visuals are aligned
+            syncRemotePlayerPhysics(peerId, position, rotation);
           });
           // *** END ***
         }
@@ -453,6 +448,19 @@ export const useGameStore = create<GameState>((set, get) => {
               if (updatedPlayerState.score >= get().winningScore && !get().gameWinner) {
                 set({ gameWinner: targetPlayerId });
               }
+
+              // --- SYNC WITH PHYSICS ---
+              // Synchronize the physics body with the network position
+              if (partialUpdate.position && partialUpdate.rotation) {
+                import('@/systems/physics').then(({ syncRemotePlayerPhysics }) => {
+                  syncRemotePlayerPhysics(
+                    targetPlayerId,
+                    updatedPlayerState.position,
+                    updatedPlayerState.rotation
+                  );
+                });
+              }
+              // --- END SYNC WITH PHYSICS ---
 
               // --- REFINE LOG: Show *before* and *after* ---
               console.log(
@@ -606,6 +614,13 @@ export const useGameStore = create<GameState>((set, get) => {
 
     addPlayerScore: (playerId: PlayerId, points: number) => {
       const { players, winningScore } = get();
+      console.log('[DEBUG] Adding score:', {
+        playerId,
+        points,
+        currentScore: players[playerId]?.score,
+        isKing: players[playerId]?.isKing,
+        isLocalPlayer: playerId === get().localPlayerId,
+      });
       if (players[playerId]) {
         const newScore = players[playerId].score + points;
 
@@ -711,8 +726,13 @@ export const useGameStore = create<GameState>((set, get) => {
       const localPlayer = players[localPlayerId];
       const currentTime = Date.now();
 
-      // Check cooldown
-      if (currentTime - localPlayer.lastBombTime < BOMB_COOLDOWN) {
+      // Check for hack mode to bypass cooldown
+      const isHackMode =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('hack') === 'true';
+
+      // Check cooldown if not in hack mode
+      if (!isHackMode && currentTime - localPlayer.lastBombTime < BOMB_COOLDOWN) {
         return; // Still on cooldown
       }
 
@@ -746,6 +766,14 @@ export const useGameStore = create<GameState>((set, get) => {
       const { localPlayerId, players } = get();
       if (!localPlayerId) return false;
 
+      // Check for hack mode to bypass cooldown
+      if (
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('hack') === 'true'
+      ) {
+        return true;
+      }
+
       const localPlayer = players[localPlayerId];
       return Date.now() - (localPlayer.lastBombTime || 0) >= BOMB_COOLDOWN;
     },
@@ -767,4 +795,25 @@ function getRandomColor(): string {
     '#FF3383', // Rose
   ];
   return colors[Math.floor(Math.random() * colors.length)];
+}
+
+// Add the function to get a random corner position
+function getRandomCornerPosition(): Vector3 {
+  // Map boundaries from mapPhysics.ts (MAP_SIZE = 30)
+  const mapSizeHalf = 14; // Half of MAP_SIZE minus a little buffer
+  const margin = 3; // Add margin from the exact corners
+
+  // Define the four corners (x, z coordinates)
+  const corners = [
+    [-mapSizeHalf + margin, -mapSizeHalf + margin], // Northwest corner
+    [mapSizeHalf - margin, -mapSizeHalf + margin], // Northeast corner
+    [-mapSizeHalf + margin, mapSizeHalf - margin], // Southwest corner
+    [mapSizeHalf - margin, mapSizeHalf - margin], // Southeast corner
+  ];
+
+  // Select a random corner
+  const randomCorner = corners[Math.floor(Math.random() * corners.length)];
+
+  // Return the position with y = 1 (slightly above ground)
+  return new Vector3(randomCorner[0], 1, randomCorner[1]);
 }

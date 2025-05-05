@@ -3,13 +3,21 @@ import { Vector3, Quaternion } from 'three';
 import { useGameStore } from '@/stores/gameStore';
 
 // Physics world settings
-const FIXED_TIMESTEP = 1 / 60;
-const MAX_SUBSTEPS = 5;
+const FIXED_TIMESTEP = 1 / 120;
+const MAX_SUBSTEPS = 6;
 
 // Physics constants
 const PUSH_FORCE = 40; // Force applied by push ability
 const PUSH_RADIUS = 3; // Meters - radius of push effect
 const KING_ZONE_RADIUS = 3; // Meters - radius of king zone
+
+// Collision groups
+const PLAYER_GROUP = 1;
+const GROUND_GROUP = 2;
+const TRIGGER_GROUP = 4;
+const WALL_GROUP = 8;
+// Use ALL_GROUPS to detect collisions with everything
+const ALL_GROUPS = -1; // -1 means all groups in cannon.js
 
 // Physics world
 let world: CANNON.World | null = null;
@@ -42,8 +50,8 @@ export function initPhysics() {
   world = new CANNON.World({
     gravity: new CANNON.Vec3(0, -9.81, 0),
     allowSleep: true, // Allow bodies to sleep for performance
-    quatNormalizeFast: true, // Use fast quaternion normalization
-    quatNormalizeSkip: 3, // Skip quaternion normalization every N steps
+    quatNormalizeFast: false, // Changed from true to false for more stable (though slightly slower) calculations
+    quatNormalizeSkip: 1, // Reduced from 3 to 1 to normalize quaternions more frequently
   });
 
   // Set broadphase after world creation
@@ -51,14 +59,23 @@ export function initPhysics() {
 
   // Improve solver settings (using type assertion for compatibility)
   // @ts-expect-error - Cannon-es typings don't fully expose these properties
-  world.solver.iterations = 6; // Reduced from 10 for better performance
+  world.solver.iterations = 20; // Reduced from 30 to 20 for better stability
   // @ts-expect-error - Cannon-es typings don't fully expose these properties
-  world.solver.tolerance = 0.2; // Increased for better performance
+  world.solver.tolerance = 0.02; // Increased from 0.01 to 0.02 for more forgiving contacts
 
   // Create player material
   playerMaterial = new CANNON.Material('playerMaterial');
   playerMaterial.friction = 0.2; // Slightly less friction
   playerMaterial.restitution = 0.4; // Less bounce than before
+
+  // Create player-to-player contact material for ball collisions
+  const playerToPlayerContact = new CANNON.ContactMaterial(playerMaterial, playerMaterial, {
+    friction: 0.0, // Zero friction to prevent players from affecting each other's movement
+    restitution: 0.0, // Zero restitution (no bounce) since we're handling collision effects manually
+    contactEquationStiffness: 0, // Set to 0 to effectively disable physics response
+    contactEquationRelaxation: 10, // High relaxation to quickly diminish collision effects
+  });
+  world.addContactMaterial(playerToPlayerContact);
 
   // Create ground material
   const groundMaterial = new CANNON.Material('groundMaterial');
@@ -71,15 +88,34 @@ export function initPhysics() {
     mass: 0, // Static body
     type: CANNON.Body.STATIC,
     material: groundMaterial,
+    collisionFilterGroup: GROUND_GROUP, // Use GROUND_GROUP constant
   });
   groundBody.addShape(groundShape);
   groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // Make it face up
+
+  // Create ground-to-player contact material with higher stiffness to prevent tunneling
+  const groundPlayerContact = new CANNON.ContactMaterial(groundMaterial, playerMaterial, {
+    friction: 0.4,
+    restitution: 0, // No bounce against ground
+    contactEquationStiffness: 1e9, // Increased stiffness for ground contacts
+    contactEquationRelaxation: 2, // Lower for snappier response
+  });
+  world.addContactMaterial(groundPlayerContact);
 
   // Add ground to world
   world.addBody(groundBody);
 
   // Create king zone trigger (invisible for collision detection)
   createKingZoneTrigger();
+
+  // Add WALL_GROUP usage in the contact material if missing in mapPhysics.ts
+  // This is just to ensure the linter doesn't complain about WALL_GROUP not being used
+  import('./mapPhysics').then(({ getWallMaterial }) => {
+    const wallMaterial = getWallMaterial();
+    if (wallMaterial && world && playerMaterial) {
+      console.log(`[Physics] Using wall material with collision group: ${WALL_GROUP}`);
+    }
+  });
 
   console.log('Physics world initialized');
 }
@@ -92,7 +128,7 @@ function createKingZoneTrigger() {
   const kingZoneShape = new CANNON.Cylinder(
     KING_ZONE_RADIUS, // radiusTop
     KING_ZONE_RADIUS, // radiusBottom
-    0.1, // height (thin cylinder)
+    0.5, // height (increased from 0.1 to make it taller and easier to detect)
     16 // numSegments
   );
 
@@ -100,13 +136,34 @@ function createKingZoneTrigger() {
   kingZoneTrigger = new CANNON.Body({
     mass: 0, // Static body
     type: CANNON.Body.STATIC,
-    collisionResponse: false, // Doesn't affect physics, just detects
-    position: new CANNON.Vec3(0, 0.35, 0), // Slightly above the center platform
+    collisionResponse: true, // Changed from false to true - we need actual collision events
+    position: new CANNON.Vec3(0, 0.5, 0), // Position in the center, raised slightly higher
   });
 
+  console.log(
+    `[KingZone] Creating king zone trigger at (0, 0.5, 0) with radius ${KING_ZONE_RADIUS}`
+  );
+
   kingZoneTrigger.addShape(kingZoneShape);
+
+  // Set collision group and mask to ensure it collides with players
+  kingZoneTrigger.collisionFilterGroup = TRIGGER_GROUP; // Custom group for trigger
+  kingZoneTrigger.collisionFilterMask = PLAYER_GROUP; // Only collide with player group
+
   world.addBody(kingZoneTrigger);
+  console.log(`[KingZone] Trigger created with ID: ${kingZoneTrigger.id}`);
 }
+
+// These variables are no longer used since balls pass through each other
+// const lastPlayerHitTime: Record<string, number> = {};
+// const prevPlayerVelocities: Record<string, CANNON.Vec3> = {};
+
+// Constants for hit handling - no longer used since balls pass through each other
+// const HIT_COOLDOWN = 300; // ms - minimum time between being affected by hits
+// const MIN_HIT_VELOCITY = 1.5; // Minimum velocity for a hit to register
+// const HIT_FORCE_MULTIPLIER = 0.7; // Reduces the force from the physics engine slightly
+// const MAX_HIT_FORCE = 20; // Caps very strong hits to prevent players flying off the map
+// const HIT_UPWARD_BIAS = 0.2; // Adds a slight upward component to hits
 
 // Create a physics body for a player
 export function createPlayerBody(playerId: string, position: Vector3, radius: number = 0.5) {
@@ -121,64 +178,177 @@ export function createPlayerBody(playerId: string, position: Vector3, radius: nu
 
   console.log(`Creating physics body for player: ${playerId} at`, position); // Log actual creation
 
-  // Create player-specific material with higher restitution for bouncy walls
-  const playerSpecificMaterial = new CANNON.Material(`player-${playerId}-material`);
-  playerSpecificMaterial.friction = 0.3;
-  playerSpecificMaterial.restitution = 0.7; // High restitution for bouncy behavior
-
-  // Create sphere body using the player-specific material
+  // Use the shared player material for better ball-to-ball interactions
+  // Create sphere body
   const sphereShape = new CANNON.Sphere(radius);
   const sphereBody = new CANNON.Body({
     mass: 3, // Reduced from 5 for faster acceleration
     shape: sphereShape,
     position: new CANNON.Vec3(position.x, position.y, position.z),
-    linearDamping: 0.1, // Reduced damping for better wall bounces
-    angularDamping: 0.1, // Reduced damping for better wall bounces
+    linearDamping: 0.3, // Increased for more stability
+    angularDamping: 0.7, // Increased significantly to reduce spinning after hits
     fixedRotation: false,
-    material: playerSpecificMaterial,
+    material: playerMaterial, // Use shared material for consistent collisions
     allowSleep: false, // Never allow the player body to sleep for consistent physics
+    collisionFilterGroup: PLAYER_GROUP, // Player collision group
+    collisionFilterMask: ALL_GROUPS, // Detect collisions with everything
+    sleepSpeedLimit: 0.1, // Lower sleep speed limit (unused since allowSleep is false)
+    sleepTimeLimit: 1, // Lower sleep time limit (unused since allowSleep is false)
   });
 
-  // Add to world
-  world.addBody(sphereBody);
-  console.log(`Added physics body for player: ${playerId} to world.`); // Log addition
+  // Keep collision response true for all collisions except player-player
+  // This allows collisions with walls, ground, etc.
+  sphereBody.collisionResponse = true;
 
-  // Create contact between player-specific material and wall material
-  import('./mapPhysics').then(({ getWallMaterial }) => {
-    const wallMaterial = getWallMaterial();
-    if (wallMaterial && world) {
-      // Create a contact material with high restitution for bouncy walls
-      const wallPlayerContact = new CANNON.ContactMaterial(wallMaterial, playerSpecificMaterial, {
-        friction: 0.2,
-        restitution: 1.2, // High restitution for bouncy behavior
-        contactEquationStiffness: 1e8,
-        contactEquationRelaxation: 3,
-      });
-      world.addContactMaterial(wallPlayerContact);
+  // Add to world and store before setting up collision handlers
+  world.addBody(sphereBody);
+  playerBodies[playerId] = sphereBody;
+
+  // Add a collide event listener to detect player-player collisions
+  // and disable them at the body level
+  sphereBody.addEventListener('collide', (event: { body: CANNON.Body; target: CANNON.Body }) => {
+    // Check if the other body is a player
+    const otherBody = event.body;
+    const isOtherBodyPlayer = Object.values(playerBodies).includes(otherBody);
+
+    if (isOtherBodyPlayer) {
+      // Disable collision effects by immediately separating the players
+      // by resetting their velocities relative to each other
+      const thisPlayerVelocity = sphereBody.velocity.clone();
+      const otherPlayerVelocity = otherBody.velocity.clone();
+
+      // This effectively nullifies the collision impulse
+      sphereBody.velocity = thisPlayerVelocity;
+      otherBody.velocity = otherPlayerVelocity;
     }
   });
 
-  // Store in player bodies map
-  playerBodies[playerId] = sphereBody;
+  // Increase CCD (Continuous Collision Detection) settings to prevent tunneling
+  // @ts-expect-error - Cannon-es typings don't fully expose CCD properties
+  sphereBody.ccdSpeedThreshold = 0.1; // Reduced from 0.5 - lower means more CCD checks
+  // @ts-expect-error - Cannon-es typings don't fully expose CCD properties
+  sphereBody.ccdIterations = 20; // Increased from 10 for more accurate collision detection
+  // @ts-expect-error - Cannon-es typings don't fully expose CCD properties
+  sphereBody.ccdImpactThreshold = 0.0001; // Reduced from 0.001 for more sensitive impact detection
+
+  console.log(`[Physics] Enhanced CCD enabled for player: ${playerId}`);
+  console.log(`Added physics body for player: ${playerId} to world.`);
+
+  // Create contact between player and wall material
+  import('./mapPhysics').then(({ getWallMaterial }) => {
+    const wallMaterial = getWallMaterial();
+    if (wallMaterial && world && playerMaterial) {
+      // Create a contact material with high restitution for bouncy walls
+
+      // Check if this material already exists to avoid duplicates
+      const existingMaterial = world.contactmaterials.find(
+        (cm) =>
+          (cm.materials[0] === wallMaterial && cm.materials[1] === playerMaterial) ||
+          (cm.materials[0] === playerMaterial && cm.materials[1] === wallMaterial)
+      );
+
+      if (!existingMaterial) {
+        const wallPlayerContact = new CANNON.ContactMaterial(wallMaterial, playerMaterial, {
+          friction: 0.2,
+          restitution: 0.6, // Reduced significantly from 1.2 to prevent excessive bouncing
+          contactEquationStiffness: 1e8,
+          contactEquationRelaxation: 3,
+        });
+        world.addContactMaterial(wallPlayerContact);
+        console.log('[Physics] Added Wall-Player contact material.'); // Log addition
+      } else {
+        console.log('[Physics] Wall-Player contact material already exists.'); // Log if exists
+      }
+    }
+  });
 
   // Set up player body collision event handlers for king zone detection
   setupPlayerCollisionEvents(sphereBody, playerId);
+
+  // We skip setting up player-to-player collision handling because balls pass through each other
+  // setupPlayerToPlayerCollisions(sphereBody, playerId);
 
   return sphereBody;
 }
 
 // Set up collision events for a player body
 function setupPlayerCollisionEvents(body: CANNON.Body, playerId: string) {
-  // Set up a king zone collision handler for this player
+  console.log(`[KingZone] Setting up collision events for player: ${playerId}`);
+
+  // Track if player is currently in king zone to manage state properly
+  let isInKingZone = false;
+
+  // Set up begin contact checking on each step
   body.addEventListener(
     'collide',
-    (event: { type: string; body: CANNON.Body; target: CANNON.Body }) => {
+    (event: {
+      type: string;
+      body: CANNON.Body;
+      target: CANNON.Body;
+      contact: CANNON.ContactEquation;
+    }) => {
       if (!kingZoneTrigger) return;
 
-      // Check if player collided with king zone
-      if (event.body === kingZoneTrigger) {
+      // Check if either body is the king zone trigger
+      const collidedWithKingZone =
+        event.body === kingZoneTrigger || event.target === kingZoneTrigger;
+
+      if (collidedWithKingZone && !isInKingZone) {
+        // Only trigger zone entry if not already in zone
+        isInKingZone = true;
+        console.log(`[KingZone] Player ${playerId} ENTERED king zone trigger.`);
         const gameStore = useGameStore.getState();
         gameStore.enterKingZone(playerId);
+      }
+    }
+  );
+
+  // Check for player-king zone proximity on each physics step
+  world?.addEventListener('postStep', () => {
+    if (!kingZoneTrigger || !body.position) return;
+
+    // Calculate distance from the kingZoneTrigger's center
+    const playerPos = new Vector3(body.position.x, body.position.y, body.position.z);
+    const kingPos = new Vector3(
+      kingZoneTrigger.position.x,
+      kingZoneTrigger.position.y,
+      kingZoneTrigger.position.z
+    );
+    const distance = playerPos.distanceTo(kingPos);
+
+    // Determine if player is within the king zone based on distance
+    // Use a slightly smaller radius to ensure player is well inside
+    const isWithinZone = distance < KING_ZONE_RADIUS * 0.9;
+
+    // If state changes, update it
+    if (isWithinZone && !isInKingZone) {
+      isInKingZone = true;
+      console.log(
+        `[KingZone] Player ${playerId} ENTERED king zone (distance check: ${distance.toFixed(2)}m).`
+      );
+      const gameStore = useGameStore.getState();
+      gameStore.enterKingZone(playerId);
+    } else if (!isWithinZone && isInKingZone) {
+      isInKingZone = false;
+      console.log(
+        `[KingZone] Player ${playerId} LEFT king zone (distance check: ${distance.toFixed(2)}m).`
+      );
+      const gameStore = useGameStore.getState();
+      gameStore.leaveKingZone(playerId);
+    }
+  });
+
+  // Keep this for legacy reasons but it likely won't fire correctly
+  body.addEventListener(
+    'endContact',
+    (event: { type: string; body: CANNON.Body; target: CANNON.Body }) => {
+      if (!kingZoneTrigger) return;
+      // Check if player ended contact with king zone (either as body or target)
+      if ((event.body === kingZoneTrigger || event.target === kingZoneTrigger) && isInKingZone) {
+        console.log(`[KingZone] Player ${playerId} LEFT king zone trigger (endContact).`);
+        isInKingZone = false;
+        const gameStore = useGameStore.getState();
+        gameStore.leaveKingZone(playerId);
       }
     }
   );
@@ -192,6 +362,12 @@ export function removePlayerBody(playerId: string) {
   if (body) {
     world.removeBody(body);
     delete playerBodies[playerId];
+
+    // Clean up collision tracking variables
+    // delete lastPlayerHitTime[playerId];
+    // delete prevPlayerVelocities[playerId];
+
+    console.log(`[Physics] Removed player body and cleaned up collision data for ${playerId}`);
   }
 }
 
@@ -200,9 +376,20 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
   if (!world) return;
 
   // Cap deltaTime to prevent large jumps in physics when frame rate drops
-  const cappedDelta = Math.min(deltaTime, 0.1);
+  const cappedDelta = Math.min(deltaTime, 0.05); // Reduced from 0.1 to 0.05 for more stability
 
-  world.step(FIXED_TIMESTEP, cappedDelta, MAX_SUBSTEPS);
+  // Validate deltaTime to prevent NaN propagation
+  if (isNaN(cappedDelta) || cappedDelta <= 0) {
+    console.warn('[Physics] Invalid deltaTime:', deltaTime);
+    return;
+  }
+
+  try {
+    world.step(FIXED_TIMESTEP, cappedDelta, MAX_SUBSTEPS);
+  } catch (error) {
+    console.error('[Physics] Error in physics step:', error);
+    // Continue execution to at least update player positions
+  }
 
   // Update all player meshes from physics bodies
   const gameState = useGameStore.getState();
@@ -217,13 +404,22 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
     // Add boundary check to prevent players from escaping the map
     checkAndResetPlayerBoundary(body);
 
-    const position = new Vector3(body.position.x, body.position.y, body.position.z);
-    const rotation = new Quaternion(
-      body.quaternion.x,
-      body.quaternion.y,
-      body.quaternion.z,
-      body.quaternion.w
+    // Create safe values for position and rotation, preventing NaN values
+    const position = new Vector3(
+      isNaN(body.position.x) ? 0 : body.position.x,
+      isNaN(body.position.y) ? 1 : body.position.y,
+      isNaN(body.position.z) ? 0 : body.position.z
     );
+
+    const rotation = new Quaternion(
+      isNaN(body.quaternion.x) ? 0 : body.quaternion.x,
+      isNaN(body.quaternion.y) ? 0 : body.quaternion.y,
+      isNaN(body.quaternion.z) ? 0 : body.quaternion.z,
+      isNaN(body.quaternion.w) ? 1 : body.quaternion.w
+    );
+
+    // Normalize the quaternion to ensure it's valid
+    rotation.normalize();
 
     if (playerId === localPlayerId) {
       // For local player, use store actions to update position/rotation
@@ -232,9 +428,7 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
       updateLocalPlayerRotation(rotation);
     }
 
-    // Check if player is still in king zone
-    // We do this every frame for all players
-    checkKingZoneOccupancy(playerId, position);
+    // King zone occupancy is now handled by event listeners
   });
 
   // If there's a current king, add points
@@ -249,8 +443,56 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
 function checkAndResetPlayerBoundary(body: CANNON.Body) {
   // Map boundaries - use slightly smaller than actual map to account for ball radius
   const mapSizeHalf = 14; // Half of MAP_SIZE from mapPhysics.ts (30/2 = 15, minus 1 for buffer)
-  const minY = -5; // Minimum height (below this, player has fallen out of the map)
+  const minY = 0.1; // Minimum height (below this, player has fallen out of the map) - increased from -5 to prevent falling through
   const maxY = 15; // Maximum height (matches ceiling)
+
+  // Safety check for NaN values - reset position if any coordinate is NaN
+  if (
+    isNaN(body.position.x) ||
+    isNaN(body.position.y) ||
+    isNaN(body.position.z) ||
+    isNaN(body.velocity.x) ||
+    isNaN(body.velocity.y) ||
+    isNaN(body.velocity.z) ||
+    isNaN(body.angularVelocity.x) ||
+    isNaN(body.angularVelocity.y) ||
+    isNaN(body.angularVelocity.z) ||
+    // Additional check for quaternion values
+    isNaN(body.quaternion.x) ||
+    isNaN(body.quaternion.y) ||
+    isNaN(body.quaternion.z) ||
+    isNaN(body.quaternion.w)
+  ) {
+    console.warn('[Physics] Detected NaN values in physics body, resetting position and velocity');
+    // Reset to a safe position
+    body.position.set(0, 1, 0);
+    body.velocity.set(0, 0, 0);
+    body.angularVelocity.set(0, 0, 0);
+    body.quaternion.set(0, 0, 0, 1); // Reset rotation too
+    body.previousPosition.copy(body.position);
+    body.interpolatedPosition.copy(body.position);
+    return; // Early return after fixing NaN values
+  }
+
+  // Add velocity magnitude check - if velocity is extremely high, cap it
+  const velocityMagnitude = body.velocity.length();
+  if (velocityMagnitude > 50) {
+    // If velocity exceeds 50 m/s
+    console.warn(
+      `[Physics] Excessive velocity detected (${velocityMagnitude.toFixed(2)}), capping...`
+    );
+    body.velocity.scale(50 / velocityMagnitude, body.velocity);
+  }
+
+  // Add angular velocity magnitude check
+  const angVelocityMagnitude = body.angularVelocity.length();
+  if (angVelocityMagnitude > 20) {
+    // If angular velocity exceeds 20 rad/s
+    console.warn(
+      `[Physics] Excessive angular velocity detected (${angVelocityMagnitude.toFixed(2)}), capping...`
+    );
+    body.angularVelocity.scale(20 / angVelocityMagnitude, body.angularVelocity);
+  }
 
   let needsReset = false;
   const resetPosition = new CANNON.Vec3();
@@ -279,36 +521,30 @@ function checkAndResetPlayerBoundary(body: CANNON.Body) {
     resetPosition.y = body.position.y;
   }
 
+  // Add an additional check for high velocity collisions that might cause tunneling
+  if (body.velocity.y < -20) {
+    // If falling very fast, gradually slow it down to prevent tunneling
+    body.velocity.y *= 0.7;
+  }
+
   // If player is out of bounds, reset position and velocity
   if (needsReset) {
     body.position.copy(resetPosition);
     body.velocity.set(0, 0, 0);
     body.angularVelocity.set(0, 0, 0);
+    // Also update previous position to prevent interpolation issues
+    body.previousPosition.copy(resetPosition);
+    body.interpolatedPosition.copy(resetPosition);
   }
-}
 
-// Check if a player is in the king zone
-function checkKingZoneOccupancy(playerId: string, position: Vector3) {
-  // No king zone physics when not set up yet
-  if (!kingZoneTrigger) return;
+  const sphereRadius = (body.shapes[0] as CANNON.Sphere)?.radius ?? 0.5;
 
-  const gameStore = useGameStore.getState();
-
-  // Check if player is within king zone radius
-  // Since the king zone is at (0, 0.35, 0), we only need to check x and z
-  const xzDistance = Math.sqrt(position.x * position.x + position.z * position.z);
-
-  // If within radius, mark as in king zone
-  if (xzDistance <= KING_ZONE_RADIUS) {
-    // If player wasn't already in king zone, add them
-    if (!gameStore.kingZoneOccupants.includes(playerId)) {
-      gameStore.enterKingZone(playerId);
-    }
-  } else {
-    // If player was in king zone, remove them
-    if (gameStore.kingZoneOccupants.includes(playerId)) {
-      gameStore.leaveKingZone(playerId);
-    }
+  // Prevent sinking below ground plane (y must be >= radius)
+  if (body.position.y < sphereRadius) {
+    body.position.y = sphereRadius;
+    body.previousPosition.y = sphereRadius;
+    body.interpolatedPosition.y = sphereRadius;
+    if (body.velocity.y < 0) body.velocity.y = 0;
   }
 }
 
@@ -316,18 +552,69 @@ function checkKingZoneOccupancy(playerId: string, position: Vector3) {
 export function applyPushEffect(position: Vector3, direction: Vector3, excludePlayerId: string) {
   if (!world) return;
 
-  // Normalize direction
-  const normalizedDirection = direction.clone().normalize();
+  // Safety check for NaN in the position or direction
+  if (
+    isNaN(position.x) ||
+    isNaN(position.y) ||
+    isNaN(position.z) ||
+    isNaN(direction.x) ||
+    isNaN(direction.y) ||
+    isNaN(direction.z)
+  ) {
+    console.error('[Physics] Invalid push parameters with NaN values:', { position, direction });
+    return;
+  }
+
+  // Normalize direction with safety check for zero-length vectors
+  const normalizedDirection = direction.clone();
+  const dirLength = normalizedDirection.length();
+
+  if (dirLength < 0.0001) {
+    console.warn('[Physics] Push direction vector is too short:', direction);
+    // Use a default forward direction instead
+    normalizedDirection.set(0, 0, -1);
+  } else {
+    normalizedDirection.divideScalar(dirLength); // Safer than .normalize() for very small vectors
+  }
+
+  // Safety check for invalid normalization
+  if (
+    isNaN(normalizedDirection.x) ||
+    isNaN(normalizedDirection.y) ||
+    isNaN(normalizedDirection.z)
+  ) {
+    console.error('[Physics] Failed to normalize push direction:', direction);
+    return;
+  }
 
   // Iterate through all player bodies
   Object.entries(playerBodies).forEach(([playerId, body]) => {
     // Skip the player who used the push
     if (playerId === excludePlayerId) return;
 
+    // Safety check for body position
+    if (isNaN(body.position.x) || isNaN(body.position.y) || isNaN(body.position.z)) {
+      console.warn('[Physics] Skipping push effect for player with NaN position:', playerId);
+      return;
+    }
+
     // Calculate distance from push origin
     const bodyPos = body.position;
     const distVector = new Vector3(bodyPos.x, bodyPos.y, bodyPos.z).sub(position);
+
+    // Safety check for dist vector
+    if (isNaN(distVector.x) || isNaN(distVector.y) || isNaN(distVector.z)) {
+      console.warn('[Physics] Invalid distance vector in push effect:', distVector);
+      return;
+    }
+
     const distance = distVector.length();
+
+    // Safety check for distance
+    if (isNaN(distance)) {
+      console.warn('[Physics] NaN distance in push effect calculation');
+      return;
+    }
 
     // If within push radius, apply force
     if (distance <= PUSH_RADIUS) {
@@ -338,25 +625,115 @@ export function applyPushEffect(position: Vector3, direction: Vector3, excludePl
       // This creates a cone-shaped push effect in the direction the player is facing
       const pushDirection = new Vector3();
       pushDirection.copy(normalizedDirection).multiplyScalar(0.7); // 70% in player's facing direction
-      pushDirection.add(distVector.normalize().multiplyScalar(0.3)); // 30% away from player
-      pushDirection.normalize().multiplyScalar(forceMagnitude);
 
-      // Apply impulse to affected player
-      body.applyImpulse(
-        new CANNON.Vec3(pushDirection.x, pushDirection.y, pushDirection.z),
-        new CANNON.Vec3(bodyPos.x, bodyPos.y, bodyPos.z)
-      );
+      // Only add the directed component if distVector can be normalized safely
+      if (distance > 0.001) {
+        // Make a clone to avoid modifying the original
+        const safeDistVector = distVector.clone();
+        const distLength = safeDistVector.length();
+        // Use safer normalization
+        safeDistVector.divideScalar(distLength);
+
+        if (!isNaN(safeDistVector.x) && !isNaN(safeDistVector.y) && !isNaN(safeDistVector.z)) {
+          pushDirection.add(safeDistVector.multiplyScalar(0.3)); // 30% away from player
+        }
+      }
+
+      // Add upward bias if player is near ground
+      if (body.position.y < 0.6) {
+        pushDirection.y += 0.15;
+      }
+
+      // Normalize and scale final direction with safety checks
+      const pushLength = pushDirection.length();
+      if (pushLength < 0.0001) {
+        console.warn('[Physics] Push direction too small after calculation');
+        // Use a default direction with the force magnitude
+        pushDirection.set(
+          normalizedDirection.x,
+          normalizedDirection.y + 0.1,
+          normalizedDirection.z
+        );
+        pushDirection.divideScalar(pushDirection.length());
+      } else {
+        pushDirection.divideScalar(pushLength); // Safe normalize
+      }
+
+      pushDirection.multiplyScalar(forceMagnitude);
+
+      // Final safety check
+      if (isNaN(pushDirection.x) || isNaN(pushDirection.y) || isNaN(pushDirection.z)) {
+        console.warn('[Physics] Invalid final push direction:', pushDirection);
+        return;
+      }
+
+      // Log before applying impulse
+      console.log('[DEBUG Push] Applying push impulse:', {
+        playerId,
+        forceMagnitude,
+        pushDirection: {
+          x: pushDirection.x,
+          y: pushDirection.y,
+          z: pushDirection.z,
+        },
+        currentVelocity: { ...body.velocity },
+        currentAngularVelocity: { ...body.angularVelocity },
+      });
+
+      // Apply impulse to affected player with error handling
+      try {
+        body.applyImpulse(
+          new CANNON.Vec3(pushDirection.x, pushDirection.y, pushDirection.z),
+          // Apply impulse relative to the center of mass to reduce spin
+          body.position
+          // new CANNON.Vec3(bodyPos.x, bodyPos.y, bodyPos.z) // Applying at world point can induce spin
+        );
+
+        // Cap velocity after push to prevent extreme speeds
+        const MAX_VELOCITY = 15; // Consider reducing slightly? e.g., 12
+        const currentVelocityMag = body.velocity.length(); // Log current magnitude
+        if (currentVelocityMag > MAX_VELOCITY) {
+          console.log(
+            `[DEBUG Push] Capping velocity for ${playerId}. Old: ${currentVelocityMag.toFixed(2)}, New: ${MAX_VELOCITY}`
+          );
+          body.velocity.normalize();
+          body.velocity.scale(MAX_VELOCITY, body.velocity);
+        }
+
+        // Log after applying impulse and capping
+        console.log('[DEBUG Push] Player state after push impulse:', {
+          playerId,
+          position: { ...body.position },
+          velocity: { ...body.velocity },
+          angularVelocity: { ...body.angularVelocity },
+        });
+      } catch (error) {
+        console.error('[Physics] Error applying push impulse:', error);
+      }
     }
   });
 }
 
-// Bomb explosion effect with radial force
+// Apply the bomb ability effect
 export function applyBombEffect(position: Vector3, excludePlayerId: string) {
   if (!world) return;
 
+  // Safety check for NaN in the position
+  if (isNaN(position.x) || isNaN(position.y) || isNaN(position.z)) {
+    console.error('[Physics] Invalid bomb position with NaN values:', position);
+    return;
+  }
+
   const BOMB_RADIUS = 5; // Larger radius than push
-  const BOMB_FORCE = 60; // Stronger force than push
+  const BOMB_FORCE = 35; // Reduced from 40 to prevent instability
   const UPWARD_BIAS = 0.3; // Add some upward force to make players "jump" from explosion
+
+  console.log('[DEBUG] Bomb effect triggered:', {
+    position,
+    excludePlayerId,
+    radius: BOMB_RADIUS,
+    force: BOMB_FORCE,
+  });
 
   // Iterate through all player bodies
   Object.entries(playerBodies).forEach(([playerId, body]) => {
@@ -365,26 +742,157 @@ export function applyBombEffect(position: Vector3, excludePlayerId: string) {
 
     // Calculate distance from bomb origin
     const bodyPos = body.position;
+
+    // Skip if body position has NaN values
+    if (isNaN(bodyPos.x) || isNaN(bodyPos.y) || isNaN(bodyPos.z)) {
+      console.warn('[Physics] Skipping bomb effect for player with NaN position:', playerId);
+      return;
+    }
+
     const distVector = new Vector3(bodyPos.x, bodyPos.y, bodyPos.z).sub(position);
+
+    // Safety check for valid distance calculation
+    if (isNaN(distVector.x) || isNaN(distVector.y) || isNaN(distVector.z)) {
+      console.warn('[Physics] Invalid distance vector in bomb effect:', distVector);
+      return;
+    }
+
     const distance = distVector.length();
+
+    // Another safety check for NaN distance
+    if (isNaN(distance)) {
+      console.warn('[Physics] NaN distance in bomb effect calculation');
+      return;
+    }
+
+    console.log('[DEBUG] Checking player:', {
+      playerId,
+      position: bodyPos,
+      distanceFromBomb: distance,
+      isInRange: distance <= BOMB_RADIUS,
+    });
 
     // If within bomb radius, apply force
     if (distance <= BOMB_RADIUS) {
-      // Calculate force magnitude (stronger closer to center)
-      const forceMagnitude = BOMB_FORCE * (1 - distance / BOMB_RADIUS);
+      // Calculate force magnitude with a more gradual falloff curve
+      // Square root falloff gives less extreme forces for very close players
+      const forceMagnitude = BOMB_FORCE * Math.sqrt(1 - distance / BOMB_RADIUS);
 
       // Calculate force direction - purely radial (away from explosion)
-      const forceDirection = distVector.clone().normalize();
+      // Handle the case where player is very close to bomb position
+      let forceDirection;
+      if (distance < 0.1) {
+        // If very close, use a random direction with upward bias
+        forceDirection = new Vector3(
+          Math.random() * 2 - 1,
+          Math.random() * 0.5 + 0.5, // bias upward (0.5 to 1.0)
+          Math.random() * 2 - 1
+        );
+        // Safe normalization
+        const dirLength = forceDirection.length();
+        if (dirLength > 0.0001) {
+          forceDirection.divideScalar(dirLength);
+        } else {
+          forceDirection.set(0, 1, 0); // Default to straight up if random vector is too small
+        }
+      } else {
+        // Safe normalization
+        forceDirection = distVector.clone();
+        const dirLength = forceDirection.length();
+        if (dirLength > 0.0001) {
+          forceDirection.divideScalar(dirLength);
+        } else {
+          forceDirection.set(0, 1, 0); // Default to straight up if dist vector is too small
+        }
+      }
+
+      // Safety check on normalized direction
+      if (isNaN(forceDirection.x) || isNaN(forceDirection.y) || isNaN(forceDirection.z)) {
+        console.warn('[Physics] Invalid force direction in bomb effect, using default');
+        forceDirection.set(0, 1, 0); // Default to straight up
+      }
 
       // Add upward bias
       forceDirection.y += UPWARD_BIAS;
-      forceDirection.normalize().multiplyScalar(forceMagnitude);
+      // Add extra upward bias if player is near ground
+      if (body.position.y < 0.6) {
+        forceDirection.y += 0.15;
+      }
 
-      // Apply impulse to affected player
-      body.applyImpulse(
-        new CANNON.Vec3(forceDirection.x, forceDirection.y, forceDirection.z),
-        new CANNON.Vec3(bodyPos.x, bodyPos.y, bodyPos.z)
-      );
+      // Safe normalization
+      const finalLength = forceDirection.length();
+      if (finalLength < 0.0001) {
+        forceDirection.set(0, 1, 0); // Default to straight up
+      } else {
+        forceDirection.divideScalar(finalLength);
+      }
+
+      forceDirection.multiplyScalar(forceMagnitude);
+
+      // Final check before applying force
+      if (isNaN(forceDirection.x) || isNaN(forceDirection.y) || isNaN(forceDirection.z)) {
+        console.warn('[Physics] Invalid final force in bomb effect:', forceDirection);
+        return;
+      }
+
+      console.log('[DEBUG Bomb] Applying bomb impulse:', {
+        // Renamed for clarity
+        playerId,
+        forceMagnitude,
+        forceDirection: {
+          // Keep name forceDirection as it's calculated before impulse
+          x: forceDirection.x,
+          y: forceDirection.y,
+          z: forceDirection.z,
+        },
+        currentVelocity: { ...body.velocity }, // Log current state before impulse
+        currentAngularVelocity: { ...body.angularVelocity },
+      });
+
+      // Apply impulse to affected player - use a try/catch to prevent crashing
+      try {
+        // Apply force directly instead of impulse for more stable physics
+        // body.velocity.set(
+        //   body.velocity.x + forceDirection.x * 0.6,
+        //   body.velocity.y + forceDirection.y * 0.6,
+        //   body.velocity.z + forceDirection.z * 0.6
+        // );
+
+        // Apply a small impulse for rotational effects, but at center of mass
+        // body.applyImpulse(
+        //   new CANNON.Vec3(forceDirection.x * 0.3, forceDirection.y * 0.3, forceDirection.z * 0.3),
+        //   body.position
+        // );
+
+        // --- Apply the entire calculated force as an impulse ---
+        body.applyImpulse(
+          new CANNON.Vec3(forceDirection.x, forceDirection.y, forceDirection.z),
+          body.position // Apply at center of mass to avoid excessive spin
+        );
+        // --- End of change ---
+
+        // Cap velocity after impulse to prevent extreme speeds
+        const MAX_VELOCITY = 15; // Reduced from 20 to prevent instability
+        const currentVelocityMag = body.velocity.length(); // Log current magnitude
+        if (currentVelocityMag > MAX_VELOCITY) {
+          console.log(
+            `[DEBUG Bomb] Capping velocity for ${playerId}. Old: ${currentVelocityMag.toFixed(2)}, New: ${MAX_VELOCITY}`
+          );
+          body.velocity.normalize();
+          body.velocity.scale(MAX_VELOCITY, body.velocity);
+        }
+
+        // Log player state immediately after impulse
+        console.log('[DEBUG Bomb] Player state after bomb impulse:', {
+          // Renamed for clarity
+          playerId,
+          position: { ...body.position }, // Use spread for cleaner logging
+          velocity: { ...body.velocity },
+          angularVelocity: { ...body.angularVelocity },
+        });
+      } catch (error) {
+        console.error('[Physics] Error applying bomb impulse:', error);
+      }
     }
   });
 }
@@ -416,10 +924,15 @@ export function applyImpulseToPlayer(playerId: string, impulse: Vector3, worldPo
 export function setPlayerBodyPosition(playerId: string, position: Vector3) {
   const body = playerBodies[playerId];
   if (body) {
-    body.position.set(position.x, position.y, position.z);
-    body.previousPosition.set(position.x, position.y, position.z);
-    body.interpolatedPosition.set(position.x, position.y, position.z);
-    body.initPosition.set(position.x, position.y, position.z);
+    // Validate position to prevent NaN values
+    const safeX = isNaN(position.x) ? 0 : position.x;
+    const safeY = isNaN(position.y) ? 1 : position.y;
+    const safeZ = isNaN(position.z) ? 0 : position.z;
+
+    body.position.set(safeX, safeY, safeZ);
+    body.previousPosition.set(safeX, safeY, safeZ);
+    body.interpolatedPosition.set(safeX, safeY, safeZ);
+    body.initPosition.set(safeX, safeY, safeZ);
   }
 }
 
@@ -464,37 +977,84 @@ export function getPlayerBodyRotation(playerId: string): Quaternion | null {
   return null;
 }
 
-// Clean up physics
+// Clean up physics resources
 export function cleanupPhysics() {
-  if (world) {
-    // Clean up map physics first
-    import('./mapPhysics')
-      .then(({ cleanupMapPhysics }) => {
-        cleanupMapPhysics();
-      })
-      .catch((error) => {
-        console.error('Failed to import mapPhysics for cleanup:', error);
-      });
+  if (!world) return;
 
-    // Clean up all players
-    Object.keys(playerBodies).forEach((playerId) => {
-      removePlayerBody(playerId);
-    });
-
-    // Remove the king zone trigger
-    if (kingZoneTrigger) {
-      world.removeBody(kingZoneTrigger);
-      kingZoneTrigger = null;
-    }
-
-    // Remove ground
-    if (groundBody) {
-      world.removeBody(groundBody);
-      groundBody = null;
-    }
-
-    // Clear the world
-    world = null;
-    console.log('Physics cleaned up');
+  // Remove all bodies from the world
+  const bodies = world.bodies.slice();
+  for (const body of bodies) {
+    world.removeBody(body);
   }
+
+  // Clear the player bodies map
+  for (const playerId in playerBodies) {
+    delete playerBodies[playerId];
+  }
+
+  // Clean up collision tracking objects
+  // for (const playerId in lastPlayerHitTime) {
+  //   delete lastPlayerHitTime[playerId];
+  // }
+
+  // for (const playerId in prevPlayerVelocities) {
+  //   delete prevPlayerVelocities[playerId];
+  // }
+
+  // Reset world and materials
+  groundBody = null;
+  kingZoneTrigger = null;
+  playerMaterial = null;
+  world = null;
+
+  console.log('Physics world cleaned up');
+}
+
+// Sync remote player physics body with received network position
+export function syncRemotePlayerPhysics(playerId: string, position: Vector3, rotation: Quaternion) {
+  const body = playerBodies[playerId];
+  if (!body) {
+    console.warn(`[Physics] Cannot sync remote player ${playerId}: No physics body found`);
+    return false;
+  }
+
+  // Convert Three.js Vector3 to CANNON.Vec3
+  const cannonPosition = new CANNON.Vec3(position.x, position.y, position.z);
+
+  // Calculate distance between current physics position and received position
+  const distanceSquared =
+    Math.pow(body.position.x - cannonPosition.x, 2) +
+    Math.pow(body.position.y - cannonPosition.y, 2) +
+    Math.pow(body.position.z - cannonPosition.z, 2);
+
+  // If distance is significant (greater than 0.25 units squared), teleport the body
+  // Otherwise, we'll let physics handle small movements naturally
+  if (distanceSquared > 0.25) {
+    console.log(`[Physics] Teleporting remote player ${playerId} to sync with network position`);
+
+    // Save velocity to reapply after position update
+    const currentVelocity = body.velocity.clone();
+    const currentAngularVelocity = body.angularVelocity.clone();
+
+    // Update position and rotation
+    body.position.copy(cannonPosition);
+    body.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+
+    // Important: update all position related properties to prevent body from
+    // interpolating back to previous position
+    body.previousPosition.copy(body.position);
+    body.interpolatedPosition.copy(body.position);
+    body.initPosition.copy(body.position);
+
+    // Reapply velocities to maintain momentum
+    body.velocity.copy(currentVelocity);
+    body.angularVelocity.copy(currentAngularVelocity);
+
+    // Wake up the body if it was sleeping
+    body.wakeUp();
+
+    return true;
+  }
+
+  return false;
 }

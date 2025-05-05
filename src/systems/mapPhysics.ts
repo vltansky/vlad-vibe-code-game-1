@@ -258,6 +258,13 @@ function setupWallCollisionEvents() {
       const wall = isWallA ? bodyA : bodyB;
       const otherBody = isWallA ? bodyB : bodyA;
 
+      console.log('[DEBUG] Wall collision detected:', {
+        wallId: wall.userData?.id,
+        otherBodyType: otherBody.userData?.type,
+        otherBodyVelocity: otherBody.velocity,
+        otherBodyPosition: otherBody.position,
+      });
+
       // Apply additional bounce force on impact
       if (otherBody.mass > 0) {
         // Make sure it's not another static body
@@ -270,6 +277,12 @@ function setupWallCollisionEvents() {
         } else {
           relativeVelocity.copy(otherBody.velocity).scale(-1);
         }
+
+        console.log('[DEBUG] Pre-bounce state:', {
+          wallId: wall.userData?.id,
+          relativeVelocity,
+          bounceMultiplier,
+        });
 
         // Reflect the velocity based on wall normal
         const wallId = wall.userData?.id || '';
@@ -290,68 +303,34 @@ function setupWallCollisionEvents() {
             break;
         }
 
+        console.log('[DEBUG] Applying bounce force:', {
+          wallId,
+          bounceForce,
+          upwardForce: new CANNON.Vec3(0, 2, 0),
+        });
+
         // Apply the bounce force
         otherBody.applyImpulse(bounceForce);
 
         // Add a small upward force for more dynamic bounces
         otherBody.applyImpulse(new CANNON.Vec3(0, 2, 0));
 
-        // Calculate collision position
-        const collisionPosition = new CANNON.Vec3();
-
-        // Use contact point if available, otherwise estimate based on body position
-        if (event.contact && event.contact.bi === wall && event.contact.ri) {
-          // bi is the first body, ri is the impact vector on first body
-          collisionPosition.copy(wall.position).vadd(event.contact.ri);
-        } else if (event.contact && event.contact.bj === wall && event.contact.rj) {
-          // bj is the second body, rj is the impact vector on second body
-          collisionPosition.copy(wall.position).vadd(event.contact.rj);
-        } else {
-          // Fallback - use body position
-          collisionPosition.copy(otherBody.position);
-
-          // Adjust to be at wall boundary
-          switch (wallId) {
-            case 'north':
-              collisionPosition.z = -MAP_SIZE / 2;
-              break;
-            case 'south':
-              collisionPosition.z = MAP_SIZE / 2;
-              break;
-            case 'east':
-              collisionPosition.x = MAP_SIZE / 2;
-              break;
-            case 'west':
-              collisionPosition.x = -MAP_SIZE / 2;
-              break;
-          }
-        }
-
-        // Only dispatch visual effects for sufficiently strong collisions
-        const impactSpeed = relativeVelocity.length();
-        if (impactSpeed > 5) {
-          // Dispatch wall collision event for visual effects
-          const wallCollisionEvent = new CustomEvent('wall-collision', {
-            detail: {
-              wallId,
-              position: {
-                x: collisionPosition.x,
-                y: collisionPosition.y,
-                z: collisionPosition.z,
-              },
-              velocity: {
-                x: relativeVelocity.x,
-                y: relativeVelocity.y,
-                z: relativeVelocity.z,
-              },
-              impactSpeed,
-            },
-          });
-
-          // Dispatch event to window for GameMap component to detect
-          window.dispatchEvent(wallCollisionEvent);
-        }
+        console.log('[DEBUG] Post-bounce state:', {
+          position: otherBody.position,
+          velocity: otherBody.velocity,
+          angularVelocity: otherBody.angularVelocity,
+        });
       }
+
+      // Dispatch wall collision event for visual effects
+      const collisionEvent = new CustomEvent('wall-collision', {
+        detail: {
+          wallId: wall.userData?.id,
+          position: otherBody.position,
+          velocity: otherBody.velocity,
+        },
+      });
+      window.dispatchEvent(collisionEvent);
     }
   });
 }
