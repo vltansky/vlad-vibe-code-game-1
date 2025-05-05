@@ -121,21 +121,42 @@ export function createPlayerBody(playerId: string, position: Vector3, radius: nu
 
   console.log(`Creating physics body for player: ${playerId} at`, position); // Log actual creation
 
-  // Create sphere body using the shared player material
+  // Create player-specific material with higher restitution for bouncy walls
+  const playerSpecificMaterial = new CANNON.Material(`player-${playerId}-material`);
+  playerSpecificMaterial.friction = 0.3;
+  playerSpecificMaterial.restitution = 0.7; // High restitution for bouncy behavior
+
+  // Create sphere body using the player-specific material
   const sphereShape = new CANNON.Sphere(radius);
   const sphereBody = new CANNON.Body({
     mass: 3, // Reduced from 5 for faster acceleration
     shape: sphereShape,
     position: new CANNON.Vec3(position.x, position.y, position.z),
-    linearDamping: 0.1, // Further reduced from 0.2 for less resistance
-    angularDamping: 0.1, // Further reduced from 0.2 for less resistance
+    linearDamping: 0.1, // Reduced damping for better wall bounces
+    angularDamping: 0.1, // Reduced damping for better wall bounces
     fixedRotation: false,
-    material: playerMaterial,
+    material: playerSpecificMaterial,
+    allowSleep: false, // Never allow the player body to sleep for consistent physics
   });
 
   // Add to world
   world.addBody(sphereBody);
   console.log(`Added physics body for player: ${playerId} to world.`); // Log addition
+
+  // Create contact between player-specific material and wall material
+  import('./mapPhysics').then(({ getWallMaterial }) => {
+    const wallMaterial = getWallMaterial();
+    if (wallMaterial && world) {
+      // Create a contact material with high restitution for bouncy walls
+      const wallPlayerContact = new CANNON.ContactMaterial(wallMaterial, playerSpecificMaterial, {
+        friction: 0.2,
+        restitution: 1.2, // High restitution for bouncy behavior
+        contactEquationStiffness: 1e8,
+        contactEquationRelaxation: 3,
+      });
+      world.addContactMaterial(wallPlayerContact);
+    }
+  });
 
   // Store in player bodies map
   playerBodies[playerId] = sphereBody;

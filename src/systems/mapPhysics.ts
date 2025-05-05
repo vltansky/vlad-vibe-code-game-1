@@ -295,6 +295,62 @@ function setupWallCollisionEvents() {
 
         // Add a small upward force for more dynamic bounces
         otherBody.applyImpulse(new CANNON.Vec3(0, 2, 0));
+
+        // Calculate collision position
+        const collisionPosition = new CANNON.Vec3();
+
+        // Use contact point if available, otherwise estimate based on body position
+        if (event.contact && event.contact.bi === wall && event.contact.ri) {
+          // bi is the first body, ri is the impact vector on first body
+          collisionPosition.copy(wall.position).vadd(event.contact.ri);
+        } else if (event.contact && event.contact.bj === wall && event.contact.rj) {
+          // bj is the second body, rj is the impact vector on second body
+          collisionPosition.copy(wall.position).vadd(event.contact.rj);
+        } else {
+          // Fallback - use body position
+          collisionPosition.copy(otherBody.position);
+
+          // Adjust to be at wall boundary
+          switch (wallId) {
+            case 'north':
+              collisionPosition.z = -MAP_SIZE / 2;
+              break;
+            case 'south':
+              collisionPosition.z = MAP_SIZE / 2;
+              break;
+            case 'east':
+              collisionPosition.x = MAP_SIZE / 2;
+              break;
+            case 'west':
+              collisionPosition.x = -MAP_SIZE / 2;
+              break;
+          }
+        }
+
+        // Only dispatch visual effects for sufficiently strong collisions
+        const impactSpeed = relativeVelocity.length();
+        if (impactSpeed > 5) {
+          // Dispatch wall collision event for visual effects
+          const wallCollisionEvent = new CustomEvent('wall-collision', {
+            detail: {
+              wallId,
+              position: {
+                x: collisionPosition.x,
+                y: collisionPosition.y,
+                z: collisionPosition.z,
+              },
+              velocity: {
+                x: relativeVelocity.x,
+                y: relativeVelocity.y,
+                z: relativeVelocity.z,
+              },
+              impactSpeed,
+            },
+          });
+
+          // Dispatch event to window for GameMap component to detect
+          window.dispatchEvent(wallCollisionEvent);
+        }
       }
     }
   });
@@ -518,4 +574,9 @@ export function cleanupMapPhysics() {
     world.removeBody(ceilingBody);
     ceilingBody = null;
   }
+}
+
+// Export wall material for use in other modules
+export function getWallMaterial(): CANNON.Material | null {
+  return wallMaterial || null;
 }
