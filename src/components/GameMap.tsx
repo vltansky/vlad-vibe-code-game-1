@@ -10,6 +10,12 @@ const WALL_HEIGHT = 2;
 const WALL_THICKNESS = 1;
 const KING_ZONE_RADIUS = 3;
 
+// Wall bounce effect duration in seconds
+const WALL_BOUNCE_EFFECT_DURATION = 0.5;
+
+// Wall IDs - must match IDs in mapPhysics.ts
+const WALL_IDS = ['north', 'south', 'east', 'west'];
+
 export function GameMap() {
   const mapRef = useRef<Box3>(
     new Box3(
@@ -23,11 +29,41 @@ export function GameMap() {
   const [kingZoneOpacity, setKingZoneOpacity] = useState<number>(0.6);
   const [kingZonePulse, setKingZonePulse] = useState<number>(0);
 
+  // Wall bounce visual effects
+  const [wallBounceEffects, setWallBounceEffects] = useState<Record<string, number>>({
+    north: 0,
+    south: 0,
+    east: 0,
+    west: 0,
+  });
+
   // Get king state from store
   const currentKingId = useGameStore((state) => state.currentKingId);
   const kingZoneOccupants = useGameStore((state) => state.kingZoneOccupants);
 
-  // Animate king zone effects
+  // Subscribe to custom wall collision events
+  useEffect(() => {
+    // Custom event listener for wall collisions
+    const handleWallCollision = (event: CustomEvent) => {
+      const { wallId } = event.detail;
+      if (WALL_IDS.includes(wallId)) {
+        setWallBounceEffects((prev) => ({
+          ...prev,
+          [wallId]: WALL_BOUNCE_EFFECT_DURATION,
+        }));
+      }
+    };
+
+    // Add event listener
+    window.addEventListener('wallCollision', handleWallCollision as EventListener);
+
+    // Clean up
+    return () => {
+      window.removeEventListener('wallCollision', handleWallCollision as EventListener);
+    };
+  }, []);
+
+  // Animate effects
   useFrame((state, delta) => {
     // Pulse animation for king zone
     setKingZonePulse((prev) => (prev + delta) % 2);
@@ -53,6 +89,22 @@ export function GameMap() {
       setKingZoneColor('#ffffff');
       setKingZoneOpacity(0.3);
     }
+
+    // Update wall bounce effects
+    setWallBounceEffects((prev) => {
+      const updated = { ...prev };
+      let hasChanges = false;
+
+      // Decay all active effects
+      Object.keys(updated).forEach((wallId) => {
+        if (updated[wallId] > 0) {
+          updated[wallId] = Math.max(0, updated[wallId] - delta);
+          hasChanges = true;
+        }
+      });
+
+      return hasChanges ? updated : prev;
+    });
   });
 
   // Initialize map physics
@@ -72,6 +124,18 @@ export function GameMap() {
       // Cleanup happens in physics.ts
     };
   }, []);
+
+  // Helper function to get wall effect parameters
+  const getWallEffectParams = (wallId: string) => {
+    const intensity = wallBounceEffects[wallId];
+    const normalizedIntensity = intensity / WALL_BOUNCE_EFFECT_DURATION;
+
+    // Base color with adjusted brightness based on bounce effect
+    const color = intensity > 0 ? '#77bbff' : '#555555';
+    const emissiveIntensity = normalizedIntensity * 2;
+
+    return { color, emissiveIntensity };
+  };
 
   return (
     <group>
@@ -93,7 +157,7 @@ export function GameMap() {
         <meshStandardMaterial color="#8B4513" roughness={0.9} metalness={0.1} />
       </mesh>
 
-      {/* Boundary Walls */}
+      {/* Boundary Walls with bounce effects */}
       {/* North Wall */}
       <Box
         position={[0, WALL_HEIGHT / 2, -MAP_SIZE / 2 - WALL_THICKNESS / 2]}
@@ -101,7 +165,13 @@ export function GameMap() {
         castShadow
         receiveShadow
       >
-        <meshStandardMaterial color="#555555" />
+        <meshStandardMaterial
+          color={getWallEffectParams('north').color}
+          emissive="#4488ff"
+          emissiveIntensity={getWallEffectParams('north').emissiveIntensity}
+          roughness={0.3}
+          metalness={0.7}
+        />
       </Box>
 
       {/* South Wall */}
@@ -111,7 +181,13 @@ export function GameMap() {
         castShadow
         receiveShadow
       >
-        <meshStandardMaterial color="#555555" />
+        <meshStandardMaterial
+          color={getWallEffectParams('south').color}
+          emissive="#4488ff"
+          emissiveIntensity={getWallEffectParams('south').emissiveIntensity}
+          roughness={0.3}
+          metalness={0.7}
+        />
       </Box>
 
       {/* East Wall */}
@@ -121,7 +197,13 @@ export function GameMap() {
         castShadow
         receiveShadow
       >
-        <meshStandardMaterial color="#555555" />
+        <meshStandardMaterial
+          color={getWallEffectParams('east').color}
+          emissive="#4488ff"
+          emissiveIntensity={getWallEffectParams('east').emissiveIntensity}
+          roughness={0.3}
+          metalness={0.7}
+        />
       </Box>
 
       {/* West Wall */}
@@ -131,8 +213,51 @@ export function GameMap() {
         castShadow
         receiveShadow
       >
-        <meshStandardMaterial color="#555555" />
+        <meshStandardMaterial
+          color={getWallEffectParams('west').color}
+          emissive="#4488ff"
+          emissiveIntensity={getWallEffectParams('west').emissiveIntensity}
+          roughness={0.3}
+          metalness={0.7}
+        />
       </Box>
+
+      {/* Wall bounce guide labels - only show when a wall is active */}
+      {WALL_IDS.map((wallId) => {
+        if (wallBounceEffects[wallId] <= 0) return null;
+
+        let position: [number, number, number];
+        switch (wallId) {
+          case 'north':
+            position = [0, WALL_HEIGHT / 2, -MAP_SIZE / 2 - WALL_THICKNESS];
+            break;
+          case 'south':
+            position = [0, WALL_HEIGHT / 2, MAP_SIZE / 2 + WALL_THICKNESS];
+            break;
+          case 'east':
+            position = [MAP_SIZE / 2 + WALL_THICKNESS, WALL_HEIGHT / 2, 0];
+            break;
+          case 'west':
+            position = [-MAP_SIZE / 2 - WALL_THICKNESS, WALL_HEIGHT / 2, 0];
+            break;
+          default:
+            position = [0, 0, 0];
+        }
+
+        // Indicator sphere showing bounce
+        return (
+          <mesh key={`bounce-indicator-${wallId}`} position={position}>
+            <sphereGeometry args={[0.3, 16, 16]} />
+            <meshStandardMaterial
+              color="#4488ff"
+              emissive="#4488ff"
+              emissiveIntensity={1}
+              transparent
+              opacity={wallBounceEffects[wallId] / WALL_BOUNCE_EFFECT_DURATION}
+            />
+          </mesh>
+        );
+      })}
 
       {/* Corner Blockers - prevent players escaping at corners */}
       {[
@@ -148,7 +273,13 @@ export function GameMap() {
           castShadow
           receiveShadow
         >
-          <meshStandardMaterial color="#555555" transparent opacity={0.7} />
+          <meshStandardMaterial
+            color="#555555"
+            transparent
+            opacity={0.7}
+            roughness={0.3}
+            metalness={0.7}
+          />
         </Box>
       ))}
 

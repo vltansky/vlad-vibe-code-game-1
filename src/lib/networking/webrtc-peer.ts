@@ -79,8 +79,8 @@ export class WebRTCPeer {
         this.peer = new Peer(peerId, this.config);
 
         // Add additional debugging for RTCPeerConnection events
-        // @ts-ignore - Accessing internal _pc property for debugging
-        const internalPeer = this.peer as any;
+        // Accessing internal _pc property for debugging
+        const internalPeer = this.peer as { _pc?: RTCPeerConnection };
 
         // Wait for the internal PeerConnection to be created
         const checkForPeerConnection = () => {
@@ -167,7 +167,7 @@ export class WebRTCPeer {
       }
     });
 
-    pc.addEventListener('icecandidateerror', (event: any) => {
+    pc.addEventListener('icecandidateerror', (event: RTCPeerConnectionIceErrorEvent) => {
       console.error('[WebRTC] ICE candidate error:', event);
     });
 
