@@ -14,9 +14,9 @@ const ATTACK_COOLDOWN = 8000; // 8 seconds
 // Distance at which NPC will use bomb ability
 const ATTACK_DISTANCE = 2.5;
 // Reaction delay in ms - how long before NPC reacts to player position changes
-const REACTION_DELAY = 1500;
+const REACTION_DELAY = 500; // Reduced from 1500ms to make NPC more responsive
 // NPC movement speed
-const MOVEMENT_SPEED = 3; // Force multiplier - smaller than player movement force
+const MOVEMENT_SPEED = 8; // Increased from 3 to make NPC move faster
 // Distance at which NPC will stop approaching the player
 const MIN_FOLLOW_DISTANCE = 1.8;
 
@@ -68,14 +68,14 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
     // Create sphere shape for NPC
     const sphereShape = new CANNON.Sphere(0.5);
     const sphereBody = new CANNON.Body({
-      mass: 0.1, // Very light mass
+      mass: 1, // Increased from 0.1 to give more momentum
       shape: sphereShape,
       position: new CANNON.Vec3(position.x, position.y, position.z),
       material: playerMaterial,
       collisionFilterGroup: NPC_GROUP, // Use NPC group instead of PLAYER_GROUP
       collisionFilterMask: GROUND_GROUP | WALL_GROUP, // Only collide with ground and walls, not players
       fixedRotation: true,
-      linearDamping: 0.9, // High damping to prevent excessive movement
+      linearDamping: 0.4, // Reduced from 0.9 to allow more movement
     });
 
     // Store reference to the body
@@ -159,8 +159,8 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
       }
 
       // Move towards target player if not too close
-      // Add movement logic
-      if (actualDistance > MIN_FOLLOW_DISTANCE && currentTime - lastMoveTime.current > 100) {
+      if (actualDistance > MIN_FOLLOW_DISTANCE && currentTime - lastMoveTime.current > 50) {
+        // More frequent updates (50ms instead of 100ms)
         // Calculate direction vector from NPC to player
         const direction = new Vector3()
           .subVectors(npcState.targetPlayerPosition, physicsPosition)
@@ -170,9 +170,18 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
         body.applyForce(
           new CANNON.Vec3(
             direction.x * MOVEMENT_SPEED,
-            direction.y * MOVEMENT_SPEED,
+            0, // Keep y-force at 0 to prevent flying
             direction.z * MOVEMENT_SPEED
-          )
+          ),
+          new CANNON.Vec3(body.position.x, body.position.y, body.position.z)
+        );
+
+        // Also set some velocity directly for more immediate response
+        const currentVel = body.velocity;
+        body.velocity.set(
+          currentVel.x + direction.x * 2,
+          currentVel.y,
+          currentVel.z + direction.z * 2
         );
 
         lastMoveTime.current = currentTime;

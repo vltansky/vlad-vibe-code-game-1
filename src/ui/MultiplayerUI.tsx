@@ -134,7 +134,7 @@ export function MultiplayerUI() {
           >
             <div className="mb-6 flex items-center gap-3">
               <Gamepad2 className="text-gray-400" size={24} />
-              <h2 className="text-xl font-semibold tracking-tight text-gray-100">Multiplayer</h2>
+              <h2 className="text-xl font-semibold tracking-tight text-gray-100">The King Ball</h2>
             </div>
 
             {connectionError && (
