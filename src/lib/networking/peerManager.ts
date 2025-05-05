@@ -136,6 +136,7 @@ export class PeerManager {
 
     // Handle data
     peer.on('data', (data: PeerData) => {
+      console.log(`[PeerManager] Received data from PeerConnection ${peerId}:`, data);
       this.listeners.data?.(peerId, data);
     });
 
@@ -210,6 +211,7 @@ export class PeerManager {
   // Send data to all peers
   broadcast(type: string, payload: unknown): void {
     for (const peer of this.peers.values()) {
+      console.log(`[PeerManager] Broadcasting data to ${peer.id} - Type: ${type}`);
       if (peer.isConnected) {
         peer.send(type, payload);
       }
@@ -220,6 +222,7 @@ export class PeerManager {
   send(peerId: string, type: string, payload: unknown): void {
     const peer = this.peers.get(peerId);
     if (peer && peer.isConnected) {
+      console.log(`[PeerManager] Sending data to ${peerId} - Type: ${type}`);
       peer.send(type, payload);
     } else {
       console.warn(`Cannot send data to peer ${peerId}: not connected`);

@@ -160,7 +160,46 @@ export const useGameStore = create<GameState>((set, get) => {
 
       set({ isConnecting: true, connectionError: null, roomId });
 
-      const peerManager = new PeerManager();
+      // --- MODIFY: Instantiate PeerManager with ICE Servers ---
+      const iceServers: RTCIceServer[] = [
+        // Public STUN servers
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        // custom
+
+        {
+          urls: 'stun:stun.relay.metered.ca:80',
+        },
+        {
+          urls: 'turn:global.relay.metered.ca:80',
+          username: '5df6a73f882e0b2c6e7ff098',
+          credential: '4SS6CksF518Kj/zH',
+        },
+        {
+          urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+          username: '5df6a73f882e0b2c6e7ff098',
+          credential: '4SS6CksF518Kj/zH',
+        },
+        {
+          urls: 'turn:global.relay.metered.ca:443',
+          username: '5df6a73f882e0b2c6e7ff098',
+          credential: '4SS6CksF518Kj/zH',
+        },
+        {
+          urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+          username: '5df6a73f882e0b2c6e7ff098',
+          credential: '4SS6CksF518Kj/zH',
+        },
+      ];
+
+      const peerManager = new PeerManager({
+        debug: true, // Enable debug logs
+        iceServers: iceServers,
+      });
+      // --- END MODIFY ---
 
       // Set up connection timeout
       connectionTimeoutId = setTimeout(() => {
@@ -273,10 +312,17 @@ export const useGameStore = create<GameState>((set, get) => {
         const players = get().players;
         const currentPeerManager = get().peerManager;
 
-        // Send our state to the new peer
+        // --- MODIFY: Get state directly and send ---
         if (localPlayerId && players[localPlayerId] && currentPeerManager) {
-          currentPeerManager.send(peerId, 'player_state', players[localPlayerId]);
+          const localState = players[localPlayerId];
+          console.log(`[GameStore] Attempting to send initial player_state to new peer ${peerId}`);
+          currentPeerManager.send(peerId, 'player_state', localState);
+        } else {
+          console.warn(
+            `[GameStore] Cannot send initial state to ${peerId}: Missing localPlayerId, state, or peerManager`
+          );
         }
+        // --- END MODIFY ---
       });
 
       peerManager.on('peerDisconnect', (peerId) => {
@@ -293,11 +339,21 @@ export const useGameStore = create<GameState>((set, get) => {
 
       // Handle data events
       peerManager.on('data', (peerId, data: PeerData) => {
+        console.log(`[GameStore] Received data from ${peerId}:`, data);
+
         // Existing handler for full initial state
         if (data.type === 'player_state') {
           const playerState = data.payload as PlayerState;
           const { players } = get();
           const updatedPlayers = { ...players };
+
+          if (updatedPlayers[peerId]) {
+            console.warn(
+              `[GameStore] Player state for ${peerId} already exists. Ignoring duplicate.`
+            );
+            return;
+          }
+
           const position = new Vector3();
           position.set(
             playerState.position.x || 0,
@@ -312,7 +368,6 @@ export const useGameStore = create<GameState>((set, get) => {
             playerState.rotation.w || 1
           );
 
-          // Include king mechanics properties with defaults
           updatedPlayers[peerId] = {
             ...playerState,
             position,
@@ -324,7 +379,19 @@ export const useGameStore = create<GameState>((set, get) => {
             lastBombTime: playerState.lastBombTime || 0,
           };
 
-          set({ players: updatedPlayers });
+          console.log('[GameStore] Adding player state:', peerId, updatedPlayers[peerId]);
+
+          set({
+            players: updatedPlayers,
+            playerCount: Object.keys(updatedPlayers).length,
+          });
+
+          // *** Create physics body for the NEW remote player ***
+          import('@/systems/physics').then(({ createPlayerBody }) => {
+            console.log(`[GameStore] Creating physics body for remote player ${peerId}`);
+            createPlayerBody(peerId, position);
+          });
+          // *** END ***
         }
 
         // Handler for partial updates
@@ -376,6 +443,11 @@ export const useGameStore = create<GameState>((set, get) => {
               if (updatedPlayerState.score >= get().winningScore && !get().gameWinner) {
                 set({ gameWinner: targetPlayerId });
               }
+
+              console.log(
+                `[GameStore] Partially updated player state for ${targetPlayerId}:`,
+                updatedPlayerState
+              );
             }
           }
         }

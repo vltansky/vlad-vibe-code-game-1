@@ -47,6 +47,7 @@ export class PeerConnection {
       try {
         const parsedData = JSON.parse(data.toString()) as PeerData;
         if (this.debug) console.log('Received data:', parsedData);
+        console.log(`[PeerConnection] Raw data received: ${data.toString()}`);
         this.listeners.data?.(parsedData);
       } catch (error) {
         console.error('Failed to parse peer data:', error);
@@ -73,7 +74,9 @@ export class PeerConnection {
 
     try {
       const data: PeerData = { type, payload };
-      this.peer.send(JSON.stringify(data));
+      const jsonData = JSON.stringify(data);
+      console.log(`[PeerConnection] Sending data: ${jsonData}`);
+      this.peer.send(jsonData);
     } catch (error) {
       console.error('Failed to send data:', error);
     }
