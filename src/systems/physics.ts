@@ -17,7 +17,10 @@ const GROUND_GROUP = 2;
 const TRIGGER_GROUP = 4;
 const WALL_GROUP = 8;
 // Use ALL_GROUPS to detect collisions with everything
-const ALL_GROUPS = -1; // -1 means all groups in cannon.js
+const ALL_GROUPS = -1; // -1 means all groups in cannon.js - used for non-player objects
+
+// Define mask for players to collide with everything EXCEPT other players
+const PLAYER_COLLIDE_MASK = GROUND_GROUP | TRIGGER_GROUP | WALL_GROUP; // No PLAYER_GROUP
 
 // Physics world
 let world: CANNON.World | null = null;
@@ -124,34 +127,29 @@ export function initPhysics() {
 function createKingZoneTrigger() {
   if (!world) return;
 
-  // Create a cylinder shape for the king zone
-  const kingZoneShape = new CANNON.Cylinder(
+  // King zone - static cylinder in center of map
+  const cylinderShape = new CANNON.Cylinder(
     KING_ZONE_RADIUS, // radiusTop
     KING_ZONE_RADIUS, // radiusBottom
-    0.5, // height (increased from 0.1 to make it taller and easier to detect)
+    0.5, // height
     16 // numSegments
   );
 
-  // Create trigger body - a non-colliding trigger
   kingZoneTrigger = new CANNON.Body({
     mass: 0, // Static body
+    position: new CANNON.Vec3(0, 0.5, 0), // Position in the center, raised slightly
+    shape: cylinderShape,
+    collisionResponse: true, // Need actual collision events
     type: CANNON.Body.STATIC,
-    collisionResponse: true, // Changed from false to true - we need actual collision events
-    position: new CANNON.Vec3(0, 0.5, 0), // Position in the center, raised slightly higher
+    collisionFilterGroup: TRIGGER_GROUP,
+    collisionFilterMask: getCollisionMask('trigger'),
   });
 
   console.log(
     `[KingZone] Creating king zone trigger at (0, 0.5, 0) with radius ${KING_ZONE_RADIUS}`
   );
 
-  kingZoneTrigger.addShape(kingZoneShape);
-
-  // Set collision group and mask to ensure it collides with players
-  kingZoneTrigger.collisionFilterGroup = TRIGGER_GROUP; // Custom group for trigger
-  kingZoneTrigger.collisionFilterMask = PLAYER_GROUP; // Only collide with player group
-
   world.addBody(kingZoneTrigger);
-  console.log(`[KingZone] Trigger created with ID: ${kingZoneTrigger.id}`);
 }
 
 // These variables are no longer used since balls pass through each other
@@ -191,7 +189,7 @@ export function createPlayerBody(playerId: string, position: Vector3, radius: nu
     material: playerMaterial, // Use shared material for consistent collisions
     allowSleep: false, // Never allow the player body to sleep for consistent physics
     collisionFilterGroup: PLAYER_GROUP, // Player collision group
-    collisionFilterMask: ALL_GROUPS, // Detect collisions with everything
+    collisionFilterMask: getCollisionMask('player'), // Use our helper function
     sleepSpeedLimit: 0.1, // Lower sleep speed limit (unused since allowSleep is false)
     sleepTimeLimit: 1, // Lower sleep time limit (unused since allowSleep is false)
   });
@@ -204,24 +202,8 @@ export function createPlayerBody(playerId: string, position: Vector3, radius: nu
   world.addBody(sphereBody);
   playerBodies[playerId] = sphereBody;
 
-  // Add a collide event listener to detect player-player collisions
-  // and disable them at the body level
-  sphereBody.addEventListener('collide', (event: { body: CANNON.Body; target: CANNON.Body }) => {
-    // Check if the other body is a player
-    const otherBody = event.body;
-    const isOtherBodyPlayer = Object.values(playerBodies).includes(otherBody);
-
-    if (isOtherBodyPlayer) {
-      // Disable collision effects by immediately separating the players
-      // by resetting their velocities relative to each other
-      const thisPlayerVelocity = sphereBody.velocity.clone();
-      const otherPlayerVelocity = otherBody.velocity.clone();
-
-      // This effectively nullifies the collision impulse
-      sphereBody.velocity = thisPlayerVelocity;
-      otherBody.velocity = otherPlayerVelocity;
-    }
-  });
+  // No need for player-player collision listener since we've updated the collision mask
+  // to prevent these collisions entirely
 
   // Increase CCD (Continuous Collision Detection) settings to prevent tunneling
   // @ts-expect-error - Cannon-es typings don't fully expose CCD properties
@@ -233,6 +215,9 @@ export function createPlayerBody(playerId: string, position: Vector3, radius: nu
 
   console.log(`[Physics] Enhanced CCD enabled for player: ${playerId}`);
   console.log(`Added physics body for player: ${playerId} to world.`);
+  console.log(
+    `[Physics] Player collision mask set to ${PLAYER_COLLIDE_MASK} - players will pass through each other`
+  );
 
   // Create contact between player and wall material
   import('./mapPhysics').then(({ getWallMaterial }) => {
@@ -1057,4 +1042,20 @@ export function syncRemotePlayerPhysics(playerId: string, position: Vector3, rot
   }
 
   return false;
+}
+
+// Helper function to get collision mask for different object types
+export function getCollisionMask(type: 'player' | 'npc' | 'trigger' | 'all'): number {
+  switch (type) {
+    case 'player':
+      return PLAYER_COLLIDE_MASK;
+    case 'npc':
+      return GROUND_GROUP | WALL_GROUP;
+    case 'trigger':
+      return PLAYER_GROUP;
+    case 'all':
+      return ALL_GROUPS;
+    default:
+      return ALL_GROUPS;
+  }
 }

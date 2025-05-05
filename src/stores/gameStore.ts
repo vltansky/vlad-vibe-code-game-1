@@ -72,6 +72,8 @@ const BOMB_COOLDOWN = 10000; // 10 seconds between bombs
 const WINNING_SCORE = 60; // 60 points to win (1 minute as king)
 const CONNECTION_TIMEOUT = 15000; // 15 seconds connection timeout
 
+console.log(`[GameStore] Constants: WINNING_SCORE=${WINNING_SCORE}`);
+
 // Create the store
 export const useGameStore = create<GameState>((set, get) => {
   // Helper to update and broadcast player state
@@ -431,6 +433,14 @@ export const useGameStore = create<GameState>((set, get) => {
               // Handle king mechanics properties in partial update
               if (partialUpdate.score !== undefined) {
                 updatedPlayerState.score = partialUpdate.score;
+
+                // Check if this player has won based on updated score
+                if (updatedPlayerState.score >= get().winningScore && !get().gameWinner) {
+                  console.log(
+                    `[GameStore] Player ${targetPlayerId} has won via partial update with score ${updatedPlayerState.score}!`
+                  );
+                  set({ gameWinner: targetPlayerId });
+                }
               }
 
               if (partialUpdate.isKing !== undefined) {
@@ -444,10 +454,8 @@ export const useGameStore = create<GameState>((set, get) => {
               const updatedPlayers = { ...players, [targetPlayerId]: updatedPlayerState };
               set({ players: updatedPlayers });
 
-              // Check if any player has reached the winning score
-              if (updatedPlayerState.score >= get().winningScore && !get().gameWinner) {
-                set({ gameWinner: targetPlayerId });
-              }
+              // We've moved the winning check to be immediately after the score update
+              // This ensures it happens before any other state updates that might reset it
 
               // --- SYNC WITH PHYSICS ---
               // Synchronize the physics body with the network position
@@ -626,6 +634,12 @@ export const useGameStore = create<GameState>((set, get) => {
 
         // Update score
         if (playerId === get().localPlayerId) {
+          // Check if local player won BEFORE updating state
+          if (newScore >= winningScore && !get().gameWinner) {
+            console.log(`[GameStore] Local player ${playerId} has won with score ${newScore}!`);
+            set({ gameWinner: playerId });
+          }
+
           updateAndBroadcastPlayerState({ id: playerId, score: newScore });
         } else {
           // For remote players, update state directly without broadcasting
@@ -633,12 +647,14 @@ export const useGameStore = create<GameState>((set, get) => {
             ...players,
             [playerId]: { ...players[playerId], score: newScore },
           };
-          set({ players: updatedPlayers });
-        }
 
-        // Check if player won
-        if (newScore >= winningScore) {
-          set({ gameWinner: playerId });
+          // Check if remote player won
+          if (newScore >= winningScore && !get().gameWinner) {
+            console.log(`[GameStore] Remote player ${playerId} has won with score ${newScore}!`);
+            set({ gameWinner: playerId, players: updatedPlayers });
+          } else {
+            set({ players: updatedPlayers });
+          }
         }
       }
     },

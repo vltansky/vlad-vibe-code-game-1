@@ -17,16 +17,19 @@ export function Scoreboard({ inMenu = false }: ScoreboardProps) {
   // Show win message when there's a winner
   useEffect(() => {
     if (gameWinner) {
+      console.log(
+        `[Scoreboard] Showing winner: ${gameWinner}, nickname: ${players[gameWinner]?.nickname}`
+      );
       setShowWinMessage(true);
 
-      // Hide the message after 10 seconds
+      // Hide the message after 20 seconds (increased from 10)
       const timeout = setTimeout(() => {
         setShowWinMessage(false);
-      }, 10000);
+      }, 20000);
 
       return () => clearTimeout(timeout);
     }
-  }, [gameWinner]);
+  }, [gameWinner, players]);
 
   // Get sorted players by score
   const sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
@@ -34,10 +37,13 @@ export function Scoreboard({ inMenu = false }: ScoreboardProps) {
   return (
     <>
       {/* Game winner message */}
-      {showWinMessage && gameWinner && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4 rounded-xl bg-black/80 p-8 text-center backdrop-blur-md">
-            <h2 className="text-3xl font-bold text-white">{players[gameWinner].nickname} Wins!</h2>
+      {showWinMessage && gameWinner && players[gameWinner] && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4 rounded-xl border border-yellow-500/50 bg-black/90 p-8 text-center shadow-xl backdrop-blur-md">
+            <div className="mb-2 text-5xl">🏆</div>
+            <h2 className="text-4xl font-bold text-yellow-400">
+              {players[gameWinner].nickname} Wins!
+            </h2>
             <p className="mb-2 text-lg text-gray-300">First to reach 60 points</p>
             <button
               onClick={() => {

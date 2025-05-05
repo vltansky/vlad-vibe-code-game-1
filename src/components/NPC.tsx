@@ -1,29 +1,37 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Vector3, Quaternion, Group } from 'three';
+import { Mesh, Vector3, Group } from 'three';
 import { Billboard, Text } from '@react-three/drei';
 import { useGameStore } from '@/stores/gameStore';
 import { applyBombEffect } from '@/systems/physics';
 import * as CANNON from 'cannon-es';
 
 // Import constants and world getter
-import { getPhysicsWorld, getPlayerMaterial } from '@/systems/physics';
+import { getPhysicsWorld, getPlayerMaterial, getCollisionMask } from '@/systems/physics';
 
 // Time in ms between NPC bomb attacks
 const ATTACK_COOLDOWN = 8000; // 8 seconds
 // Distance at which NPC will use bomb ability
 const ATTACK_DISTANCE = 2.5;
+// Distance squared (avoid sqrt calculations)
+const ATTACK_DISTANCE_SQ = ATTACK_DISTANCE * ATTACK_DISTANCE;
 // Reaction delay in ms - how long before NPC reacts to player position changes
-const REACTION_DELAY = 500; // Reduced from 1500ms to make NPC more responsive
+const REACTION_DELAY = 400; // Reduced for faster reaction
 // NPC movement speed
-const MOVEMENT_SPEED = 8; // Increased from 3 to make NPC move faster
+const MOVEMENT_SPEED = 10; // Increased for faster movement
 // Distance at which NPC will stop approaching the player
 const MIN_FOLLOW_DISTANCE = 1.8;
+const MIN_FOLLOW_DISTANCE_SQ = MIN_FOLLOW_DISTANCE * MIN_FOLLOW_DISTANCE;
 
 // NPC-specific collision group
-const NPC_GROUP = 16; // New group, different from player group
-const GROUND_GROUP = 2; // From physics.ts
-const WALL_GROUP = 8; // From physics.ts
+const NPC_GROUP = 16;
+
+// Reusable objects to avoid garbage collection
+const _tempVec3 = new Vector3();
+const _direction = new Vector3();
+const _physicsPosition = new Vector3();
+const _cannonForce = new CANNON.Vec3();
+const _cannonPoint = new CANNON.Vec3();
 
 type NPCProps = {
   position: Vector3;
@@ -35,28 +43,17 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<Group>(null);
   const nicknameGroupRef = useRef<Group>(null);
-  const npcPhysicsBody = useRef<CANNON.Body | null>(null); // Reference to NPC physics body
+  const npcPhysicsBody = useRef<CANNON.Body | null>(null);
+
+  // Use refs for frequently changing values that don't need to trigger re-renders
   const lastAttackTime = useRef<number>(0);
   const lastTargetUpdateTime = useRef<number>(0);
   const lastMoveTime = useRef<number>(0);
-
-  // Set initial position
   const initialPosition = useRef(position.clone());
-
-  // Track local state for the NPC
-  const [npcState, setNpcState] = useState({
-    position: position.clone(),
-    rotation: new Quaternion(),
-    lastBombTime: 0,
-    targetPlayerPosition: null as Vector3 | null,
-  });
-
-  // Get players from game store
-  const players = useGameStore((state) => state.players);
+  const targetPlayerPosition = useRef<Vector3 | null>(null);
 
   // Initialize NPC physics
   useEffect(() => {
-    // Create custom physics body for NPC instead of using createPlayerBody
     const world = getPhysicsWorld();
     const playerMaterial = getPlayerMaterial();
 
@@ -68,21 +65,19 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
     // Create sphere shape for NPC
     const sphereShape = new CANNON.Sphere(0.5);
     const sphereBody = new CANNON.Body({
-      mass: 1, // Increased from 0.1 to give more momentum
+      mass: 1,
       shape: sphereShape,
       position: new CANNON.Vec3(position.x, position.y, position.z),
       material: playerMaterial,
-      collisionFilterGroup: NPC_GROUP, // Use NPC group instead of PLAYER_GROUP
-      collisionFilterMask: GROUND_GROUP | WALL_GROUP, // Only collide with ground and walls, not players
+      collisionFilterGroup: NPC_GROUP,
+      collisionFilterMask: getCollisionMask('npc'),
       fixedRotation: true,
-      linearDamping: 0.4, // Reduced from 0.9 to allow more movement
+      linearDamping: 0.3, // Reduced damping for faster movement
     });
 
-    // Store reference to the body
     npcPhysicsBody.current = sphereBody;
     world.addBody(sphereBody);
 
-    // Clean up
     return () => {
       if (world && sphereBody) {
         world.removeBody(sphereBody);
@@ -92,125 +87,118 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
 
   // Update visuals and AI behavior
   useFrame(() => {
-    if (!meshRef.current || !nicknameGroupRef.current || !npcPhysicsBody.current) return;
-
-    const body = npcPhysicsBody.current;
-    const physicsPosition = new Vector3(body.position.x, body.position.y, body.position.z);
     const mesh = meshRef.current;
     const nicknameGroup = nicknameGroupRef.current;
+    const body = npcPhysicsBody.current;
 
-    // Update our local state with the actual physics position
-    setNpcState((prev) => ({
-      ...prev,
-      position: physicsPosition,
-    }));
+    if (!mesh || !nicknameGroup || !body) return;
+
+    // Update position from physics body without creating new Vector3
+    _physicsPosition.set(body.position.x, body.position.y, body.position.z);
 
     const currentTime = Date.now();
 
     // Only update target player position after delay has passed
     if (currentTime - lastTargetUpdateTime.current > REACTION_DELAY) {
       // Get all player positions
-      const playerPositions = Object.values(players).map((player) => player.position);
+      const playerEntries = Object.entries(useGameStore.getState().players);
 
-      if (playerPositions.length > 0) {
-        // Find the closest player
-        let closestDistance = Infinity;
-        let closestPlayerIndex = -1;
+      if (playerEntries.length > 0) {
+        // Find the closest player using squared distance
+        let closestDistanceSq = Infinity;
+        let closestPlayer = null;
 
-        // Find index of closest player
-        playerPositions.forEach((playerPos, index) => {
-          const distance = physicsPosition.distanceTo(playerPos);
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestPlayerIndex = index;
+        for (const [, player] of playerEntries) {
+          // Calculate squared distance (faster than using distanceTo which does sqrt)
+          const dx = _physicsPosition.x - player.position.x;
+          const dy = _physicsPosition.y - player.position.y;
+          const dz = _physicsPosition.z - player.position.z;
+          const distSq = dx * dx + dy * dy + dz * dz;
+
+          if (distSq < closestDistanceSq) {
+            closestDistanceSq = distSq;
+            closestPlayer = player;
           }
-        });
+        }
 
-        // If we found a closest player
-        if (closestPlayerIndex >= 0) {
-          const targetPosition = playerPositions[closestPlayerIndex].clone();
-          setNpcState((prev) => ({
-            ...prev,
-            targetPlayerPosition: targetPosition,
-          }));
+        if (closestPlayer) {
+          // Only create a new Vector3 when target actually changes
+          if (!targetPlayerPosition.current) {
+            targetPlayerPosition.current = new Vector3();
+          }
+          targetPlayerPosition.current.copy(closestPlayer.position);
           lastTargetUpdateTime.current = currentTime;
         }
       }
     }
 
     // If we have a player to target
-    if (npcState.targetPlayerPosition) {
-      // Calculate actual distance to player
-      const actualDistance = physicsPosition.distanceTo(npcState.targetPlayerPosition);
+    if (targetPlayerPosition.current) {
+      // Calculate squared distance to player (avoid sqrt)
+      const dx = _physicsPosition.x - targetPlayerPosition.current.x;
+      const dy = _physicsPosition.y - targetPlayerPosition.current.y;
+      const dz = _physicsPosition.z - targetPlayerPosition.current.z;
+      const distanceSq = dx * dx + dy * dy + dz * dz;
 
       // Check if it's time to attack (use bomb)
-      const canAttack = currentTime - lastAttackTime.current > ATTACK_COOLDOWN;
-
-      if (canAttack && actualDistance < ATTACK_DISTANCE) {
-        // Use bomb ability
-        applyBombEffect(physicsPosition, id);
+      if (
+        currentTime - lastAttackTime.current > ATTACK_COOLDOWN &&
+        distanceSq < ATTACK_DISTANCE_SQ
+      ) {
+        applyBombEffect(_physicsPosition, id);
         lastAttackTime.current = currentTime;
-
-        // Update state
-        setNpcState((prev) => ({
-          ...prev,
-          lastBombTime: currentTime,
-        }));
       }
 
       // Move towards target player if not too close
-      if (actualDistance > MIN_FOLLOW_DISTANCE && currentTime - lastMoveTime.current > 50) {
-        // More frequent updates (50ms instead of 100ms)
-        // Calculate direction vector from NPC to player
-        const direction = new Vector3()
-          .subVectors(npcState.targetPlayerPosition, physicsPosition)
-          .normalize();
+      if (distanceSq > MIN_FOLLOW_DISTANCE_SQ && currentTime - lastMoveTime.current > 30) {
+        // Calculate direction vector from NPC to player (reuse _direction)
+        _direction.subVectors(targetPlayerPosition.current, _physicsPosition).normalize();
 
-        // Apply force to physics body in the direction of the player
-        body.applyForce(
-          new CANNON.Vec3(
-            direction.x * MOVEMENT_SPEED,
-            0, // Keep y-force at 0 to prevent flying
-            direction.z * MOVEMENT_SPEED
-          ),
-          new CANNON.Vec3(body.position.x, body.position.y, body.position.z)
+        // Apply force to physics body
+        _cannonForce.set(
+          _direction.x * MOVEMENT_SPEED,
+          0, // Keep y-force at 0 to prevent flying
+          _direction.z * MOVEMENT_SPEED
         );
 
-        // Also set some velocity directly for more immediate response
-        const currentVel = body.velocity;
-        body.velocity.set(
-          currentVel.x + direction.x * 2,
-          currentVel.y,
-          currentVel.z + direction.z * 2
-        );
+        _cannonPoint.copy(body.position);
+        body.applyForce(_cannonForce, _cannonPoint);
+
+        // Add direct velocity component for responsive movement
+        body.velocity.x += _direction.x * 3;
+        body.velocity.z += _direction.z * 3;
+
+        // Cap maximum velocity for stability
+        const speedSq = body.velocity.x * body.velocity.x + body.velocity.z * body.velocity.z;
+        if (speedSq > 225) {
+          // 15^2
+          const scale = 15 / Math.sqrt(speedSq);
+          body.velocity.x *= scale;
+          body.velocity.z *= scale;
+        }
 
         lastMoveTime.current = currentTime;
       }
 
-      // Update rotation to face player
-      mesh.lookAt(npcState.targetPlayerPosition);
-      const newRotation = mesh.quaternion.clone();
-      setNpcState((prev) => ({
-        ...prev,
-        rotation: newRotation,
-      }));
+      // Update rotation to face player - reuse existing object
+      _tempVec3.copy(targetPlayerPosition.current);
+      mesh.lookAt(_tempVec3);
     }
 
     // Update mesh position and rotation
-    mesh.position.copy(physicsPosition);
-    mesh.quaternion.copy(npcState.rotation);
+    mesh.position.copy(_physicsPosition);
 
-    // Update nickname position to follow above the NPC
-    nicknameGroup.position.x = physicsPosition.x;
-    nicknameGroup.position.y = physicsPosition.y + 1.5;
-    nicknameGroup.position.z = physicsPosition.z;
+    // Update nickname position
+    nicknameGroup.position.x = _physicsPosition.x;
+    nicknameGroup.position.y = _physicsPosition.y + 1.5;
+    nicknameGroup.position.z = _physicsPosition.z;
   });
 
   return (
     <group ref={groupRef}>
       {/* NPC Mesh */}
       <mesh ref={meshRef} position={initialPosition.current.toArray()} castShadow receiveShadow>
-        <sphereGeometry args={[0.5, 32, 32]} />
+        <sphereGeometry args={[0.5, 16, 16]} /> {/* Reduced segments for better performance */}
         <meshStandardMaterial color="red" />
       </mesh>
 
