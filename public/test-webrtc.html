@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC Test Client</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+        background: #f0f0f0;
+      }
+      #logs {
+        height: 300px;
+        overflow-y: auto;
+        background: #000;
+        color: #00ff00;
+        padding: 10px;
+        font-family: monospace;
+        margin-bottom: 20px;
+        white-space: pre-wrap;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      button {
+        padding: 10px 15px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+      input {
+        padding: 10px;
+        flex-grow: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebRTC Test Client</h1>
+
+    <div class="controls">
+      <input type="text" id="roomId" value="debug-room" placeholder="Room ID" />
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+
+    <div class="controls">
+      <input type="text" id="message" placeholder="Type message here" />
+      <button id="sendBtn" disabled>Send to All Peers</button>
+    </div>
+
+    <h2>Logs</h2>
+    <div id="logs"></div>
+
+    <script>
+      // Log utility
+      function log(message) {
+        const logsDiv = document.getElementById('logs');
+        logsDiv.innerHTML += `${new Date().toISOString().slice(11, 19)} ${message}\n`;
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+      }
+
+      // Elements
+      const roomIdInput = document.getElementById('roomId');
+      const connectBtn = document.getElementById('connectBtn');
+      const disconnectBtn = document.getElementById('disconnectBtn');
+      const messageInput = document.getElementById('message');
+      const sendBtn = document.getElementById('sendBtn');
+
+      // Globals
+      let socket;
+      let peers = {};
+      let myId = null;
+
+      // Connect to signaling server
+      connectBtn.addEventListener('click', () => {
+        const roomId = roomIdInput.value.trim();
+        if (!roomId) {
+          log('⚠️ Please enter a room ID');
+          return;
+        }
+
+        log(`🔌 Connecting to signaling server...`);
+        socket = io('http://localhost:8080');
+
+        // Handle connection
+        socket.on('connect', () => {
+          myId = socket.id;
+          log(`✅ Connected to signaling server with ID: ${myId}`);
+
+          // Join room
+          log(`🚪 Joining room: ${roomId}`);
+          socket.emit('join_room', { roomId });
+
+          // Update UI
+          connectBtn.disabled = true;
+          disconnectBtn.disabled = false;
+        });
+
+        // Handle disconnection
+        socket.on('disconnect', () => {
+          log(`❌ Disconnected from signaling server`);
+
+          // Clean up
+          destroyAllPeers();
+
+          // Update UI
+          connectBtn.disabled = false;
+          disconnectBtn.disabled = true;
+          sendBtn.disabled = true;
+        });
+
+        // Handle user joining
+        socket.on('user_joined', (data) => {
+          log(`👋 User joined: ${data.userId}`);
+
+          // Create new peer connection (as initiator)
+          if (data.userId !== myId) {
+            createPeer(data.userId, true);
+          }
+        });
+
+        // Handle user leaving
+        socket.on('user_left', (data) => {
+          log(`👋 User left: ${data.userId}`);
+
+          // Destroy peer connection
+          destroyPeer(data.userId);
+        });
+
+        // Handle user disconnecting
+        socket.on('user_disconnected', (data) => {
+          log(`👋 User disconnected: ${data.userId}`);
+
+          // Destroy peer connection
+          destroyPeer(data.userId);
+        });
+
+        // Handle room users list
+        socket.on('room_users', (data) => {
+          log(`👥 Users in room: ${data.users.join(', ')}`);
+
+          // Create peer connections for existing users
+          data.users.forEach((userId) => {
+            if (userId !== myId && !peers[userId]) {
+              createPeer(userId, false);
+            }
+          });
+
+          // Update UI
+          if (data.users.length > 1) {
+            sendBtn.disabled = false;
+          }
+        });
+
+        // Handle signaling
+        socket.on('signal', (data) => {
+          log(`📡 Received signal from: ${data.userId}`);
+
+          // Get or create peer
+          let peer = peers[data.userId];
+
+          if (!peer) {
+            peer = createPeer(data.userId, false);
+          }
+
+          // Process signal
+          peer.signal(data.signal);
+        });
+      });
+
+      // Disconnect from signaling server
+      disconnectBtn.addEventListener('click', () => {
+        if (socket) {
+          log(`🔌 Disconnecting from signaling server...`);
+          socket.disconnect();
+
+          // Clean up
+          destroyAllPeers();
+
+          // Update UI
+          connectBtn.disabled = false;
+          disconnectBtn.disabled = true;
+          sendBtn.disabled = true;
+        }
+      });
+
+      // Send message to all peers
+      sendBtn.addEventListener('click', () => {
+        const message = messageInput.value.trim();
+        if (!message) {
+          log('⚠️ Please enter a message');
+          return;
+        }
+
+        log(`📤 Sending message to all peers: ${message}`);
+
+        // Send to all peers
+        Object.values(peers).forEach((peer) => {
+          if (peer.connected) {
+            peer.send(
+              JSON.stringify({
+                type: 'chat',
+                payload: {
+                  sender: myId,
+                  message,
+                },
+              })
+            );
+          }
+        });
+
+        // Clear input
+        messageInput.value = '';
+      });
+
+      // Create peer connection
+      function createPeer(peerId, initiator) {
+        log(`🔄 Creating ${initiator ? 'initiator' : 'receiver'} peer for ${peerId}`);
+
+        const peer = new SimplePeer({
+          initiator,
+          trickle: true,
+        });
+
+        // Handle signal
+        peer.on('signal', (signal) => {
+          log(`📡 Generated signal for ${peerId}`);
+          socket.emit('signal', { targetId: peerId, signal });
+        });
+
+        // Handle connection
+        peer.on('connect', () => {
+          log(`🤝 Connected to peer: ${peerId}`);
+
+          // Update UI
+          sendBtn.disabled = false;
+        });
+
+        // Handle data
+        peer.on('data', (data) => {
+          try {
+            const parsed = JSON.parse(data);
+            log(`📥 Received data from ${peerId}: ${JSON.stringify(parsed)}`);
+          } catch (e) {
+            log(`📥 Received raw data from ${peerId}: ${data}`);
+          }
+        });
+
+        // Handle close
+        peer.on('close', () => {
+          log(`👋 Peer connection closed: ${peerId}`);
+          delete peers[peerId];
+
+          // Update UI if no peers left
+          if (Object.keys(peers).length === 0) {
+            sendBtn.disabled = true;
+          }
+        });
+
+        // Handle error
+        peer.on('error', (err) => {
+          log(`❌ Peer error for ${peerId}: ${err.message}`);
+        });
+
+        // Store peer
+        peers[peerId] = peer;
+
+        return peer;
+      }
+
+      // Destroy peer connection
+      function destroyPeer(peerId) {
+        const peer = peers[peerId];
+        if (peer) {
+          log(`🗑️ Destroying peer connection: ${peerId}`);
+          peer.destroy();
+          delete peers[peerId];
+
+          // Update UI if no peers left
+          if (Object.keys(peers).length === 0) {
+            sendBtn.disabled = true;
+          }
+        }
+      }
+
+      // Destroy all peer connections
+      function destroyAllPeers() {
+        Object.keys(peers).forEach((peerId) => {
+          destroyPeer(peerId);
+        });
+      }
+
+      // Init
+      log('🚀 WebRTC Test Client loaded');
+    </script>
+  </body>
+</html>
