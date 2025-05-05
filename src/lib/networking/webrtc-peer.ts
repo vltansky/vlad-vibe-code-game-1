@@ -42,13 +42,16 @@ export class WebRTCPeer {
       ...this.config,
       config: {
         iceServers: [
+          // Standard STUN servers
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:global.stun.twilio.com:3478' },
           { urls: ['stun:fr-turn8.xirsys.com'] },
+
+          // Primary TURN server from Xirsys
           {
             username:
               'YewABlKHAzhfOBZ7GDSJ8376mkdgSSIN_Ze0bI4QnuZFePM8uRzuLHaoglOIuurUAAAAAGgYo3N2bGFkdGE=',
-            credential: '52fd8762-29a5-11f0-8978-0242ac130003',
+            credential: '9becf21e-29a5-11f0-9a18-a68a84931b85',
             urls: [
               'turn:fr-turn8.xirsys.com:80?transport=udp',
               'turn:fr-turn8.xirsys.com:3478?transport=udp',
@@ -58,7 +61,30 @@ export class WebRTCPeer {
               'turns:fr-turn8.xirsys.com:5349?transport=tcp',
             ],
           },
+
+          // Additional public TURN servers as fallbacks
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+          },
         ],
+
+        // Additional ICE configuration to improve connectivity
+        iceCandidatePoolSize: 10, // Pre-gather ICE candidates
+        iceTransportPolicy: 'all', // Try all connection methods (including relay)
+        rtcpMuxPolicy: 'require', // Required for modern WebRTC
+
         ...this.config.config,
       },
     };
