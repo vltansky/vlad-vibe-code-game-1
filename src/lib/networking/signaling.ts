@@ -42,7 +42,7 @@ export class SignalingClient {
   private socket: Socket;
   private listeners: Partial<SignalingEvents> = {};
 
-  constructor(serverUrl: string = 'http://localhost:8080') {
+  constructor(serverUrl: string = 'wss://vlad-vibe-code-game-1-production.up.railway.app') {
     this.socket = io(serverUrl, {
       autoConnect: false,
       reconnection: true,
