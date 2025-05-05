@@ -4,7 +4,7 @@ import { useGameStore } from '@/stores/gameStore';
 
 // Physics world settings
 const FIXED_TIMESTEP = 1 / 60;
-const MAX_SUBSTEPS = 10;
+const MAX_SUBSTEPS = 5;
 
 // Physics constants
 const PUSH_FORCE = 40; // Force applied by push ability
@@ -42,10 +42,18 @@ export function initPhysics() {
   world = new CANNON.World({
     gravity: new CANNON.Vec3(0, -9.81, 0),
     allowSleep: true, // Allow bodies to sleep for performance
+    quatNormalizeFast: true, // Use fast quaternion normalization
+    quatNormalizeSkip: 3, // Skip quaternion normalization every N steps
   });
 
   // Set broadphase after world creation
   world.broadphase = new CANNON.SAPBroadphase(world);
+
+  // Improve solver settings (using type assertion for compatibility)
+  // @ts-expect-error - Cannon-es typings don't fully expose these properties
+  world.solver.iterations = 6; // Reduced from 10 for better performance
+  // @ts-expect-error - Cannon-es typings don't fully expose these properties
+  world.solver.tolerance = 0.2; // Increased for better performance
 
   // Create player material
   playerMaterial = new CANNON.Material('playerMaterial');
@@ -116,11 +124,11 @@ export function createPlayerBody(playerId: string, position: Vector3, radius: nu
   // Create sphere body using the shared player material
   const sphereShape = new CANNON.Sphere(radius);
   const sphereBody = new CANNON.Body({
-    mass: 5, // Slightly increased mass
+    mass: 3, // Reduced from 5 for faster acceleration
     shape: sphereShape,
     position: new CANNON.Vec3(position.x, position.y, position.z),
-    linearDamping: 0.4, // Decreased from 0.85 for faster movement
-    angularDamping: 0.4, // Decreased from 0.85 for faster movement
+    linearDamping: 0.1, // Further reduced from 0.2 for less resistance
+    angularDamping: 0.1, // Further reduced from 0.2 for less resistance
     fixedRotation: false,
     material: playerMaterial,
   });
@@ -170,14 +178,24 @@ export function removePlayerBody(playerId: string) {
 export function updatePhysics(deltaTime: number = 1 / 60) {
   if (!world) return;
 
-  world.step(FIXED_TIMESTEP, deltaTime, MAX_SUBSTEPS);
+  // Cap deltaTime to prevent large jumps in physics when frame rate drops
+  const cappedDelta = Math.min(deltaTime, 0.1);
+
+  world.step(FIXED_TIMESTEP, cappedDelta, MAX_SUBSTEPS);
 
   // Update all player meshes from physics bodies
   const gameState = useGameStore.getState();
   const updateLocalPlayerPosition = gameState.updateLocalPlayerPosition;
   const updateLocalPlayerRotation = gameState.updateLocalPlayerRotation;
+  const localPlayerId = gameState.localPlayerId;
 
   Object.entries(playerBodies).forEach(([playerId, body]) => {
+    // Skip sleeping bodies to improve performance
+    if (body.sleepState === CANNON.Body.SLEEPING) return;
+
+    // Add boundary check to prevent players from escaping the map
+    checkAndResetPlayerBoundary(body);
+
     const position = new Vector3(body.position.x, body.position.y, body.position.z);
     const rotation = new Quaternion(
       body.quaternion.x,
@@ -186,7 +204,7 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
       body.quaternion.w
     );
 
-    if (playerId === gameState.localPlayerId) {
+    if (playerId === localPlayerId) {
       // For local player, use store actions to update position/rotation
       // This will also broadcast to other players
       updateLocalPlayerPosition(position);
@@ -208,7 +226,49 @@ export function updatePhysics(deltaTime: number = 1 / 60) {
   const { currentKingId } = gameState;
   if (currentKingId) {
     // Add 1 point per second (scale by delta time)
-    gameState.addPlayerScore(currentKingId, deltaTime);
+    gameState.addPlayerScore(currentKingId, cappedDelta);
+  }
+}
+
+// Check if a player is outside the map boundaries and reset if needed
+function checkAndResetPlayerBoundary(body: CANNON.Body) {
+  // Map boundaries - use slightly smaller than actual map to account for ball radius
+  const mapSizeHalf = 14; // Half of MAP_SIZE from mapPhysics.ts (30/2 = 15, minus 1 for buffer)
+  const minY = -5; // Minimum height (below this, player has fallen out of the map)
+  const maxY = 15; // Maximum height (matches ceiling)
+
+  let needsReset = false;
+  const resetPosition = new CANNON.Vec3();
+
+  // Check X boundary
+  if (Math.abs(body.position.x) > mapSizeHalf) {
+    needsReset = true;
+    resetPosition.x = Math.sign(body.position.x) * (mapSizeHalf - 1);
+  } else {
+    resetPosition.x = body.position.x;
+  }
+
+  // Check Z boundary
+  if (Math.abs(body.position.z) > mapSizeHalf) {
+    needsReset = true;
+    resetPosition.z = Math.sign(body.position.z) * (mapSizeHalf - 1);
+  } else {
+    resetPosition.z = body.position.z;
+  }
+
+  // Check Y boundary (falling out or too high)
+  if (body.position.y < minY || body.position.y > maxY) {
+    needsReset = true;
+    resetPosition.y = 1; // Reset slightly above ground
+  } else {
+    resetPosition.y = body.position.y;
+  }
+
+  // If player is out of bounds, reset position and velocity
+  if (needsReset) {
+    body.position.copy(resetPosition);
+    body.velocity.set(0, 0, 0);
+    body.angularVelocity.set(0, 0, 0);
   }
 }
 

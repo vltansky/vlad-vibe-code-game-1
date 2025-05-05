@@ -1,40 +1,8 @@
 // import { OrbitControls } from '@react-three/drei'; // Removed
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Suspense, useRef, useEffect } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { Suspense } from 'react';
 import { GameObjects } from './GameObjects';
-import { ACESFilmicToneMapping, PCFSoftShadowMap, Scene as ThreeScene } from 'three';
-import { getPhysicsWorld } from '@/systems/physics';
-import CannonDebugger from 'cannon-es-debugger';
-
-// Helper component for the debugger
-function Debugger() {
-  const { scene } = useThree();
-  const world = getPhysicsWorld();
-  const cannonDebuggerRef = useRef<ReturnType<typeof CannonDebugger> | null>(null);
-
-  useEffect(() => {
-    if (world && scene) {
-      cannonDebuggerRef.current = CannonDebugger(scene as ThreeScene, world);
-    }
-    // Cleanup function
-    return () => {
-      if (cannonDebuggerRef.current) {
-        // How to properly cleanup cannon-es-debugger?
-        // The library doesn't provide an explicit cleanup method.
-        // We might need to manually remove the meshes it adds.
-        // For now, we'll leave it as is, but this needs revisiting.
-      }
-    };
-  }, [scene, world]);
-
-  useFrame(() => {
-    if (cannonDebuggerRef.current) {
-      cannonDebuggerRef.current.update();
-    }
-  });
-
-  return null; // This component doesn't render anything itself
-}
+import { ACESFilmicToneMapping, PCFSoftShadowMap } from 'three';
 
 export function Scene() {
   return (
@@ -45,7 +13,13 @@ export function Scene() {
       gl={{
         antialias: true,
         toneMapping: ACESFilmicToneMapping,
+        alpha: false, // Disable alpha for performance
+        stencil: false, // Disable stencil for performance
+        depth: true, // Keep depth testing
+        powerPreference: 'high-performance',
       }}
+      dpr={[1, 1.5]} // Limit pixel ratio for better performance
+      performance={{ min: 0.5 }} // Allow dynamic performance scaling
     >
       <Suspense fallback={null}>
         <fog attach="fog" args={['#111', 25, 60]} />
@@ -54,8 +28,8 @@ export function Scene() {
           position={[15, 20, 10]}
           intensity={1.5}
           castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
           shadow-camera-far={70} // Increased shadow range
           shadow-camera-left={-20}
           shadow-camera-right={20}
@@ -63,8 +37,6 @@ export function Scene() {
           shadow-camera-bottom={-20}
         />
         <GameObjects />
-        {/* Conditionally render debugger for development */}
-        {/* {import.meta.env.DEV && <Debugger />} */}
       </Suspense>
     </Canvas>
   );

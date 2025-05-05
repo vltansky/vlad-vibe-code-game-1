@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from 'three';
-import { applyImpulseToPlayer, getPlayerBodyPosition } from '@/systems/physics';
+import { applyImpulseToPlayer, applyForceToPlayer, getPlayerBodyPosition } from '@/systems/physics';
 import { useGameStore } from '@/stores/gameStore';
 
-const MOVEMENT_IMPULSE = 25; // Increased from 12 for faster movement
-const JUMP_IMPULSE = 20; // Reduced jump impulse
+const MOVEMENT_IMPULSE = 45; // Further increased for faster movement
+const JUMP_IMPULSE = 30; // Increased jump force
 // const MAX_VELOCITY = 10; // Maximum velocity clamp (optional, unused for now)
 const JUMP_COOLDOWN = 1000; // 1 second cooldown
 
@@ -99,8 +99,12 @@ export function usePlayerControls() {
   useFrame((state, delta) => {
     if (!localPlayerId) return;
 
-    const impulse = new Vector3();
     const { forward, backward, left, right, jump } = controls.current;
+
+    // Skip further processing if no movement input
+    if (!forward && !backward && !left && !right && !jump) return;
+
+    const impulse = new Vector3();
 
     if (forward) impulse.z -= MOVEMENT_IMPULSE * delta;
     if (backward) impulse.z += MOVEMENT_IMPULSE * delta;
@@ -109,8 +113,8 @@ export function usePlayerControls() {
 
     // Apply movement impulse if there's any horizontal movement
     if (impulse.lengthSq() > 0) {
-      // Apply impulse relative to the ground
-      applyImpulseToPlayer(localPlayerId, impulse); // Apply impulse directly
+      // Apply continuous force instead of impulse for smoother movement
+      applyForceToPlayer(localPlayerId, impulse.multiplyScalar(20)); // Doubled force multiplier
     }
 
     // Handle jump

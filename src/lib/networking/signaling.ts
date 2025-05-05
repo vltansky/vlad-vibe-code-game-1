@@ -42,8 +42,19 @@ export class SignalingClient {
   private socket: Socket;
   private listeners: Partial<SignalingEvents> = {};
 
-  constructor(serverUrl: string = 'wss://vlad-vibe-code-game-1-production.up.railway.app') {
-    this.socket = io(serverUrl, {
+  constructor(serverUrl?: string) {
+    // Check if we should use local server based on URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const useLocal = urlParams.get('local') === 'true';
+
+    // Use provided serverUrl, or determine based on local parameter
+    const finalServerUrl =
+      serverUrl ||
+      (useLocal
+        ? 'http://localhost:8080'
+        : 'wss://vlad-vibe-code-game-1-production.up.railway.app');
+
+    this.socket = io(finalServerUrl, {
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 5,

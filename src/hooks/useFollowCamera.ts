@@ -4,7 +4,7 @@ import { Vector3 } from 'three';
 import { useGameStore } from '@/stores/gameStore';
 
 const CAMERA_OFFSET = new Vector3(0, 8, 12); // Adjusted offset for better view
-const SMOOTH_FACTOR = 0.05; // Increased smoothing (lower value = smoother)
+const SMOOTH_FACTOR = 0.2; // Further increased for even more responsive camera
 
 export function useFollowCamera() {
   const { camera } = useThree();

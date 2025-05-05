@@ -134,6 +134,24 @@ export function GameMap() {
         <meshStandardMaterial color="#555555" />
       </Box>
 
+      {/* Corner Blockers - prevent players escaping at corners */}
+      {[
+        { x: MAP_SIZE / 2, z: MAP_SIZE / 2 }, // Northeast
+        { x: -MAP_SIZE / 2, z: MAP_SIZE / 2 }, // Northwest
+        { x: MAP_SIZE / 2, z: -MAP_SIZE / 2 }, // Southeast
+        { x: -MAP_SIZE / 2, z: -MAP_SIZE / 2 }, // Southwest
+      ].map((corner, i) => (
+        <Box
+          key={`corner-blocker-${i}`}
+          position={[corner.x, 1.5, corner.z]}
+          args={[3, 3, 3]}
+          castShadow
+          receiveShadow
+        >
+          <meshStandardMaterial color="#555555" transparent opacity={0.7} />
+        </Box>
+      ))}
+
       {/* Ramp */}
       <Box
         position={[-MAP_SIZE / 4, 0.5, MAP_SIZE / 4]}

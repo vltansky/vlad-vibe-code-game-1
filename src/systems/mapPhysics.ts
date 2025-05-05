@@ -16,6 +16,12 @@ const WALL_THICKNESS = 1;
 // Wall bodies
 const wallBodies: CANNON.Body[] = [];
 
+// Corner blocker bodies
+const cornerBlockerBodies: CANNON.Body[] = [];
+
+// Ceiling body
+let ceilingBody: CANNON.Body | null = null;
+
 // Ground body
 let groundBody: CANNON.Body | null = null;
 
@@ -49,6 +55,12 @@ export function createMapPhysics(mapBounds: Box3) {
 
     // Create walls
     createWalls(mapBounds);
+
+    // Create corner blockers
+    createCornerBlockers();
+
+    // Create ceiling
+    createCeiling();
 
     // Create center platform
     createCenterPlatform();
@@ -190,6 +202,63 @@ function createWalls(mapBounds: Box3) {
   wallBodies.push(westWallBody);
 }
 
+// Create corner blockers to prevent players from escaping at corners
+function createCornerBlockers() {
+  if (!world) return;
+
+  // Size of the corner blockers
+  const cornerSize = 3;
+  const cornerHeight = 3;
+
+  // Create blockers at each corner
+  const corners = [
+    { x: MAP_SIZE / 2, z: MAP_SIZE / 2 }, // Northeast
+    { x: -MAP_SIZE / 2, z: MAP_SIZE / 2 }, // Northwest
+    { x: MAP_SIZE / 2, z: -MAP_SIZE / 2 }, // Southeast
+    { x: -MAP_SIZE / 2, z: -MAP_SIZE / 2 }, // Southwest
+  ];
+
+  corners.forEach((corner) => {
+    // Create the corner blocker
+    const cornerShape = new CANNON.Box(
+      new CANNON.Vec3(cornerSize / 2, cornerHeight / 2, cornerSize / 2)
+    );
+
+    const cornerBody = new CANNON.Body({
+      mass: 0,
+      type: CANNON.Body.STATIC,
+      material: wallMaterial,
+      position: new CANNON.Vec3(corner.x, cornerHeight / 2, corner.z),
+      collisionResponse: true,
+    });
+
+    cornerBody.addShape(cornerShape);
+    world!.addBody(cornerBody);
+    cornerBlockerBodies.push(cornerBody);
+  });
+}
+
+// Create an invisible ceiling to prevent players from going too high
+function createCeiling() {
+  if (!world) return;
+
+  // Create a ceiling plane at a reasonable height
+  const ceilingHeight = 15; // Maximum jump height
+  const ceilingShape = new CANNON.Plane();
+  ceilingBody = new CANNON.Body({
+    mass: 0,
+    type: CANNON.Body.STATIC,
+    material: wallMaterial,
+    position: new CANNON.Vec3(0, ceilingHeight, 0),
+    collisionResponse: true,
+  });
+
+  ceilingBody.addShape(ceilingShape);
+  // Rotate the plane to face downward
+  ceilingBody.quaternion.setFromEuler(Math.PI / 2, 0, 0);
+  world.addBody(ceilingBody);
+}
+
 // Create center platform
 function createCenterPlatform() {
   if (!world) return;
@@ -305,6 +374,12 @@ export function cleanupMapPhysics() {
   });
   wallBodies.length = 0;
 
+  // Remove corner blockers
+  cornerBlockerBodies.forEach((body) => {
+    world!.removeBody(body);
+  });
+  cornerBlockerBodies.length = 0;
+
   // Remove ground
   if (groundBody) {
     world.removeBody(groundBody);
@@ -328,4 +403,10 @@ export function cleanupMapPhysics() {
     world!.removeBody(body);
   });
   obstacleBodies.length = 0;
+
+  // Remove ceiling
+  if (ceilingBody) {
+    world.removeBody(ceilingBody);
+    ceilingBody = null;
+  }
 }
