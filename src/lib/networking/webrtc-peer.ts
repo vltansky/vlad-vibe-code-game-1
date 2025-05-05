@@ -48,7 +48,7 @@ export class WebRTCPeer {
           {
             username:
               'YewABlKHAzhfOBZ7GDSJ8376mkdgSSIN_Ze0bI4QnuZFePM8uRzuLHaoglOIuurUAAAAAGgYo3N2bGFkdGE=',
-            credential: '9becf21e-29a5-11f0-9a18-a68a84931b85',
+            credential: '52fd8762-29a5-11f0-8978-0242ac130003',
             urls: [
               'turn:fr-turn8.xirsys.com:80?transport=udp',
               'turn:fr-turn8.xirsys.com:3478?transport=udp',
