@@ -1,134 +1,93 @@
-# Multiplayer Ball Physics Game
+# Multiplayer Ball Physics Game Cheatsheet
 
 ## Overview
 
-A peer-to-peer multiplayer 3D game where players control colorful balls in a physics-based environment. Players connect directly using WebRTC technology and can move around, jump, and interact with the environment and each other.
+P2P multiplayer 3D game with physics-based ball movement using WebRTC.
 
-## Technical Stack
+## Tech Stack
 
 - **Frontend**: React, Vite, TypeScript
-- **3D Graphics**: Three.js, React Three Fiber
+- **Graphics**: Three.js, React Three Fiber
 - **Physics**: Cannon.js
-- **Networking**: WebRTC via simple-peer
-- **Signaling**: Socket.io (for initial connection only)
-  - Local development mode via `?local=true` URL parameter
-- **UI Components**: shadcn/ui
+- **Networking**: WebRTC (PeerJS), Socket.io (signaling/fallback)
+- **UI**: shadcn/ui
 
 ## Key Features
 
-### Multiplayer System
+### Multiplayer
 
-- WebRTC peer-to-peer connections for low-latency direct communication
-- Socket.io backend for initial signaling and peer discovery
-  - Support for both production server and local development server
-  - Toggle between servers with `?local=true` URL parameter
-- Player state synchronization (position, velocity, nickname)
-- Network optimization with throttled updates (100ms interval)
-- Change detection to reduce bandwidth usage
-- Proper player count tracking with nickname display
+- Hybrid Networking: WebRTC P2P via PeerJS, with Socket.io for signaling and fallback.
+- Managed by `GameNetworkManager`.
+- Signaling server handles prod/local via `?local=true`.
+- Player state sync: position, rotation, velocity, animation (throttled, interpolated).
+- Client-side prediction and interpolation for smooth movement.
+- Automatic fallback to Socket.IO if WebRTC fails.
 
-### Player Controls
+### Controls
 
-- Keyboard WASD/Arrow keys movement with directional impulses
-- Spacebar for jumping with 1-second cooldown
-- Physics-based movement with optimized damping and friction values
-- Customizable player nickname display
-- Smooth movement response with appropriate force application
+- WASD/Arrows: Move
+- Space: Jump (1s cooldown)
+- Physics: Damping (0.4), friction, nickname
 
-### Graphics and Environment
+### Environment
 
-- 3D environment with dynamic lighting and shadows
-- Mixed terrain with different friction surfaces:
-  - Regular grass ground (medium friction)
-  - Ice surface in the center (low friction)
-  - Sticky surface on the sides (high friction)
-- Center platform for tactical positioning
-- Ramp for vertical movement opportunities
-- Five obstacle blocks arranged in a circular pattern
-- Smooth camera system that follows the local player
-- Player ball color assignment based on connection ID
+- Surfaces: Grass (med friction), Ice (low), Sticky (high)
+- Center platform, ramp, 5 circular obstacles
+- Follow## Physics
+- Cannon.js: Collisions
+- Custom materials: Ice, sticky, standard
+- Damping (0.4 linear/angular)
 
-### Physics
+### UI
 
-- Full Cannon.js physics integration for realistic interactions
-- Custom physics materials for varied friction and contact behavior
-- Surface-specific materials (ice, sticky, standard)
-- Linear damping (0.4) and angular damping (0.4) for smooth control
-- Appropriate restitution values (bounciness) for player balls
-- Proper collision detection between players and environment
+- Room: "game-room"
+- Nickname input, status
 
-### User Interface
+## Network Architecture
 
-- Room-based connection system ("game-room" as default)
-- Nickname input and display
-- Connection status indicators
-- Player count display
-- Control information toggle
-- Clean, minimal design using shadcn/ui components
+### Modes
+
+- **HYBRID**: Uses WebRTC for game data with Socket.IO signaling (default)
+- **WEBRTC_ONLY**: Pure peer-to-peer with no server after initial connection
+- **SIGNALING_ONLY**: Traditional client-server via Socket.IO
+
+### Data Flow
+
+1. Socket.IO for initial signaling and room management
+2. WebRTC for direct peer-to-peer communication
+3. Automatic fallback to Socket.IO if WebRTC connection fails
+4. Position/rotation updates sent via unreliable data channel for lower latency
+
+### Key Components
+
+- **SignalingClient**: Handles server communication (`src/lib/networking/signaling.ts`)
+- **WebRTCPeer**: Manages peer connections (`src/lib/networking/webrtc-peer.ts`)
+- **GameNetworkManager**: Coordinates hybrid networking (`src/lib/networking/game-network-manager.ts`)
 
 ## Game States
 
-1. **Disconnected**: Initial state, player can enter nickname and join/create room
-2. **Connecting**: Establishing WebRTC connection via signaling server
-3. **Connected**: Active gameplay with physics and multiplayer synchronization
+1. **Disconnected**: Nickname, join room
+2. **Connecting**: WebRTC setup
+3. **Connected**: Gameplay
 
 ## Code Structure
 
-- `src/components/`: 3D scene components and player objects
-  - `Scene.tsx`: Main canvas setup with lighting and rendering options
-  - `GameObjects.tsx`: Manages all game entities and physics initialization
-  - `GameMap.tsx`: Defines the environment with different surfaces
-  - `Player.tsx`: Player ball with nickname display
-- `src/hooks/`: Custom logic hooks
-  - `usePlayerControls.ts`: Handles keyboard input and player movement
-  - `useFollowCamera.ts`: Camera that smoothly follows the local player
-- `src/systems/`: Global systems
-  - `physics.ts`: Core physics integration with Cannon.js
-  - `mapPhysics.ts`: Environment-specific physics setup
-- `src/stores/`: Global state management
-  - `gameStore.ts`: Zustand store for game state and multiplayer
-- `src/lib/networking/`: WebRTC and Socket.io connection logic
-  - `peerManager.ts`: Manages WebRTC connections
-  - `signaling.ts`: Socket.io client for initial connections
-  - `peer.ts`: Wrapper for simple-peer WebRTC implementation
-- `src/ui/`: User interface components
-  - `MultiplayerUI.tsx`: Connection UI and controls display
+- `src/components/`: Scene, GameObjects, GameMap, Player
+- `src/hooks/`: usePlayerControls, useFollowCamera
+- `src/systems/`: physics, mapPhysics
+- `src/stores/`: gameStore (Zustand)
+- `src/lib/networking/`:
+  - `signaling.ts`: Socket.IO client for server communication
+  - `webrtc-peer.ts`: PeerJS wrapper for WebRTC connections
+  - `game-network-manager.ts`: Hybrid networking coordinator
+  - `usage-example.ts`: Example code showing how to use the networking system
+- `src/ui/`: MultiplayerUI
+- `server/server.py`: Socket.IO signaling server
 
-## QA Results
+## Network Optimization
 
-### Core Functionality
-
-- ✅ Connection system works correctly with nickname customization
-- ✅ Player movement and physics respond appropriately
-- ✅ Camera follows player smoothly
-- ✅ Multiplayer synchronization shows correct player count
-- ✅ Different surfaces affect movement as expected
-- ✅ Obstacle collision works properly
-- ✅ UI correctly displays connection status and player information
-
-### Performance
-
-- The physics implementation is well-optimized with:
-  - Appropriate use of sleep states for inactive objects
-  - Efficient SAPBroadphase for collision detection
-  - Optimized network updates with change detection
-  - Separated physics update loop from rendering cycle
-
-### Visual Polish
-
-- Environment has good contrast between different surfaces
-- Dynamic lighting creates appropriate shadows
-- Player ball color provides visual distinction
-- Nickname display is clearly visible above players
-
-## Future Enhancements
-
-- Game objectives and scoring system (e.g., timed challenges, collection points)
-- Additional physics objects and interactive obstacles
-- Power-ups and special abilities (speed boost, jump height)
-- Improved physics optimization for larger player counts
-- Chat system between connected players
-- Custom player appearance options
-- Mobile touch controls support
-- Sound effects and background music
-- Advanced game modes (races, capture the flag, etc.)
+- Position/rotation updates throttled to configurable rate (default: 20 updates/sec)
+- Client-side interpolation for smooth movement despite network jitter
+- Buffer-based interpolation system with configurable delay (default: 100ms)
+- SLERP quaternion interpolation for smooth rotations
+- Unreliable data channels prioritize latest updates over guaranteed delivery

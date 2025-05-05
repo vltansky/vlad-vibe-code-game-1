@@ -2,7 +2,7 @@ import { useState, ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useGameStore } from '@/stores/gameStore';
-import { Users, Gamepad2, AlertCircle, BookOpen } from 'lucide-react';
+import { Users, Gamepad2, AlertCircle, BookOpen, RefreshCw } from 'lucide-react';
 
 export function MultiplayerUI() {
   const [nickname, setNickname] = useState('');
@@ -23,6 +23,10 @@ export function MultiplayerUI() {
   const handleConnect = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     connect('game-room', nickname.trim() || 'Player');
+  };
+
+  const handleRetry = () => {
+    handleConnect();
   };
 
   const handleDisconnect = () => {
@@ -96,14 +100,26 @@ export function MultiplayerUI() {
               />
             </div>
 
-            <Button
-              variant="default"
-              className="w-full rounded-md bg-blue-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-500 disabled:opacity-60"
-              type="submit"
-              disabled={isConnecting || !nickname.trim()}
-            >
-              {isConnecting ? 'Connecting...' : 'Join Game'}
-            </Button>
+            {connectionError ? (
+              <Button
+                variant="default"
+                className="w-full rounded-md bg-yellow-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-yellow-500"
+                type="button"
+                onClick={handleRetry}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Retry Connection
+              </Button>
+            ) : (
+              <Button
+                variant="default"
+                className="w-full rounded-md bg-blue-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-500 disabled:opacity-60"
+                type="submit"
+                disabled={isConnecting || !nickname.trim()}
+              >
+                {isConnecting ? 'Connecting...' : 'Join Game'}
+              </Button>
+            )}
           </form>
         )}
 

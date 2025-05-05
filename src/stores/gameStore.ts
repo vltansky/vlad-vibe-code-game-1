@@ -64,6 +64,7 @@ export type GameState = {
 // Constants
 const PUSH_COOLDOWN = 4000; // 4 seconds between pushes
 const WINNING_SCORE = 60; // 60 points to win (1 minute as king)
+const CONNECTION_TIMEOUT = 15000; // 15 seconds connection timeout
 
 // Create the store
 export const useGameStore = create<GameState>((set, get) => {
@@ -126,6 +127,9 @@ export const useGameStore = create<GameState>((set, get) => {
     }
   };
 
+  // For the connection timeout
+  let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
   return {
     // Initial state
     isConnected: false,
@@ -152,8 +156,30 @@ export const useGameStore = create<GameState>((set, get) => {
 
       const peerManager = new PeerManager();
 
+      // Set up connection timeout
+      connectionTimeoutId = setTimeout(() => {
+        // Only timeout if we're still connecting
+        if (get().isConnecting) {
+          // Clean up the peer manager
+          peerManager.disconnect();
+
+          set({
+            isConnecting: false,
+            connectionError: 'Connection timed out. Please try again.',
+            roomId: null,
+            peerManager: null,
+          });
+        }
+      }, CONNECTION_TIMEOUT);
+
       // Handle connection events
       peerManager.on('clientConnected', () => {
+        // Clear the timeout since we connected successfully
+        if (connectionTimeoutId) {
+          clearTimeout(connectionTimeoutId);
+          connectionTimeoutId = null;
+        }
+
         const localPlayerId = peerManager.clientId;
 
         if (localPlayerId) {
@@ -190,6 +216,12 @@ export const useGameStore = create<GameState>((set, get) => {
       });
 
       peerManager.on('clientDisconnected', () => {
+        // Clear the timeout if it exists
+        if (connectionTimeoutId) {
+          clearTimeout(connectionTimeoutId);
+          connectionTimeoutId = null;
+        }
+
         set({
           isConnected: false,
           isConnecting: false,
@@ -369,6 +401,12 @@ export const useGameStore = create<GameState>((set, get) => {
 
     // Disconnect from the room
     disconnect: () => {
+      // Clear any existing connection timeout
+      if (connectionTimeoutId) {
+        clearTimeout(connectionTimeoutId);
+        connectionTimeoutId = null;
+      }
+
       const { peerManager } = get();
       if (peerManager) {
         peerManager.disconnect();
