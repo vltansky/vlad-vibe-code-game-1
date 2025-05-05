@@ -31,6 +31,21 @@ A simple Flask-based WebSocket signaling server for WebRTC peer-to-peer connecti
 
 The server will run on port 8080 by default.
 
+## Deployment
+
+### Railway.app
+
+To deploy this server on Railway.app:
+
+1. Create a new project in Railway.app
+2. Connect your GitHub repository
+3. Configure the following settings:
+   - Root Directory: `/server`
+   - Start Command: `python3 server.py`
+   - Generate a public domain in the Settings tab
+
+Railway will automatically install dependencies from requirements.txt and deploy your server.
+
 ## API
 
 ### Socket.IO Events
