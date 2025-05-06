@@ -1,8 +1,6 @@
 import SimplePeer from 'simple-peer';
 
-export type PeerOptions = SimplePeer.Options & {
-  debug?: boolean;
-};
+export type PeerOptions = SimplePeer.Options;
 
 export type PeerData = {
   type: string;

@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import { PeerManager } from '@/lib/networking/peerManager';
 import { PeerData } from '@/lib/networking/peer';
 import { Vector3, Quaternion } from 'three';
+import {
+  addPlayerBody as addPhysicsPlayerBody,
+  removePlayerBody as removePhysicsPlayerBody,
+  setPlayerBodyPosition,
+  applyPushAbilityEffect,
+  applyBombEffect,
+  initPhysics,
+  updatePhysics,
+} from '@/systems/physics';
+import { PlayerData } from './types';
 
 // Unique identifier for a player
 export type PlayerId = string;
@@ -16,7 +26,6 @@ export type PlayerState = {
   nickname: string;
   score: number; // Track player score
   isKing: boolean; // Whether player is the current king
-  lastPushTime: number; // Last time player used push ability
   lastBombTime: number; // Last time player used bomb ability
 };
 
@@ -57,17 +66,20 @@ export type GameState = {
   addPlayerScore: (playerId: PlayerId, points: number) => void;
   resetScores: () => void;
 
-  // Push mechanic
-  usePushAbility: () => void;
-  canUsePush: () => boolean;
-
   // Bomb mechanic
   useBombAbility: () => void;
   canUseBomb: () => boolean;
+
+  // Joystick state
+  joystickDelta: { x: number; y: number };
+  setJoystickDelta: (delta: { x: number; y: number }) => void;
+
+  // Physics related
+  initPhysics: () => Promise<void>;
+  updatePhysics: (delta: number) => void;
 };
 
 // Constants
-const PUSH_COOLDOWN = 4000; // 4 seconds between pushes
 const BOMB_COOLDOWN = 10000; // 10 seconds between bombs
 const WINNING_SCORE = 60; // 60 points to win (1 minute as king)
 const CONNECTION_TIMEOUT = 15000; // 15 seconds connection timeout
@@ -239,7 +251,6 @@ export const useGameStore = create<GameState>((set, get) => {
             nickname: nickname,
             score: 0, // Initial score is 0
             isKing: false, // Not king by default
-            lastPushTime: 0, // Never used push initially
             lastBombTime: 0, // Never used bomb initially
           };
 
@@ -378,7 +389,6 @@ export const useGameStore = create<GameState>((set, get) => {
             id: peerId,
             score: playerState.score || 0,
             isKing: playerState.isKing || false,
-            lastPushTime: playerState.lastPushTime || 0,
             lastBombTime: playerState.lastBombTime || 0,
           };
 
@@ -495,25 +505,6 @@ export const useGameStore = create<GameState>((set, get) => {
               );
             }
           }
-        }
-
-        // Handle push notifications from other players
-        if (data.type === 'push_ability_used') {
-          const { position, direction, playerId } = data.payload as {
-            position: { x: number; y: number; z: number };
-            direction: { x: number; y: number; z: number };
-            playerId: string;
-          };
-
-          // Import physics system to apply push effect
-          import('@/systems/physics').then(({ applyPushEffect }) => {
-            // This function will be implemented in physics.ts
-            applyPushEffect(
-              new Vector3(position.x, position.y, position.z),
-              new Vector3(direction.x, direction.y, direction.z),
-              playerId
-            );
-          });
         }
 
         // Handle bomb notifications from other players
@@ -780,61 +771,6 @@ export const useGameStore = create<GameState>((set, get) => {
       }
     },
 
-    // Push mechanic
-    usePushAbility: () => {
-      const { localPlayerId, players, peerManager } = get();
-      if (!localPlayerId || !peerManager) return;
-
-      const localPlayer = players[localPlayerId];
-      const currentTime = Date.now();
-
-      // Check cooldown
-      if (currentTime - localPlayer.lastPushTime < PUSH_COOLDOWN) {
-        return; // Still on cooldown
-      }
-
-      // Update last push time
-      const updatedPlayers = {
-        ...players,
-        [localPlayerId]: {
-          ...localPlayer,
-          lastPushTime: currentTime,
-        },
-      };
-      set({ players: updatedPlayers });
-
-      // Get player facing direction from rotation
-      const direction = new Vector3(0, 0, -1).applyQuaternion(localPlayer.rotation);
-
-      // Apply push locally through physics system
-      import('@/systems/physics').then(({ applyPushEffect }) => {
-        applyPushEffect(localPlayer.position, direction, localPlayerId);
-      });
-
-      // Broadcast push action to all peers
-      peerManager.broadcast('push_ability_used', {
-        playerId: localPlayerId,
-        position: {
-          x: localPlayer.position.x,
-          y: localPlayer.position.y,
-          z: localPlayer.position.z,
-        },
-        direction: {
-          x: direction.x,
-          y: direction.y,
-          z: direction.z,
-        },
-      });
-    },
-
-    canUsePush: () => {
-      const { localPlayerId, players } = get();
-      if (!localPlayerId) return false;
-
-      const localPlayer = players[localPlayerId];
-      return Date.now() - localPlayer.lastPushTime >= PUSH_COOLDOWN;
-    },
-
     // Bomb mechanic
     useBombAbility: () => {
       const { localPlayerId, players, peerManager } = get();
@@ -893,6 +829,18 @@ export const useGameStore = create<GameState>((set, get) => {
 
       const localPlayer = players[localPlayerId];
       return Date.now() - (localPlayer.lastBombTime || 0) >= BOMB_COOLDOWN;
+    },
+
+    // Joystick state implementation
+    joystickDelta: { x: 0, y: 0 },
+    setJoystickDelta: (delta) => set({ joystickDelta: delta }),
+
+    // Physics
+    initPhysics: async () => {
+      await initPhysics();
+    },
+    updatePhysics: (delta) => {
+      updatePhysics(delta);
     },
   };
 });

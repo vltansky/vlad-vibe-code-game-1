@@ -38,6 +38,8 @@ function getRandomCornerPositionFallback(): Vector3 {
 
 export function usePlayerControls() {
   const localPlayerId = useGameStore((state) => state.localPlayerId);
+  const joystickDelta = useGameStore((state) => state.joystickDelta);
+
   const controls = useRef<Record<string, boolean>>({
     forward: false,
     backward: false,
@@ -222,13 +224,6 @@ export function usePlayerControls() {
             gameState.useBombAbility();
           }
           break;
-        case 'KeyP':
-          // P key for push ability (changed from F to avoid conflict)
-          if (gameState.canUsePush()) {
-            // Execute push immediately
-            gameState.usePushAbility();
-          }
-          break;
         case 'KeyR':
           // Manual respawn for testing
           respawnPlayer();
@@ -273,7 +268,6 @@ export function usePlayerControls() {
 
     // Make sure delta is valid to prevent physics issues
     if (isNaN(delta) || delta <= 0 || delta > 0.5) {
-      console.warn('[Controls] Invalid delta time:', delta);
       delta = 1 / 60; // Use a safe default
     }
 
@@ -302,7 +296,6 @@ export function usePlayerControls() {
       isNaN(playerPos.z) ||
       (playerVel && (isNaN(playerVel.x) || isNaN(playerVel.y) || isNaN(playerVel.z)))
     ) {
-      console.warn('[Controls] Detected NaN in player position or velocity, respawning');
       respawnPlayer();
       return;
     }
@@ -310,16 +303,10 @@ export function usePlayerControls() {
     // Check for stuck state (not moving for a while)
     if (lastPosition.current) {
       // Use a safe distance calculation that handles potential NaN values
-      let movementDistance;
+      let movementDistance = 0;
       try {
         movementDistance = playerPos.distanceTo(lastPosition.current);
-        // Verify result is valid
-        if (isNaN(movementDistance)) {
-          console.warn('[Controls] Distance calculation produced NaN');
-          movementDistance = 0;
-        }
-      } catch (error) {
-        console.error('[Controls] Error calculating distance:', error);
+      } catch {
         movementDistance = 0;
       }
 
@@ -328,12 +315,7 @@ export function usePlayerControls() {
       if (playerVel) {
         try {
           velocitySquared = playerVel.lengthSq();
-          if (isNaN(velocitySquared)) {
-            console.warn('[Controls] Velocity calculation produced NaN');
-            velocitySquared = 0;
-          }
-        } catch (error) {
-          console.error('[Controls] Error calculating velocity:', error);
+        } catch {
           velocitySquared = 0;
         }
       }
@@ -346,11 +328,6 @@ export function usePlayerControls() {
         }
         // Check if stuck for too long
         else if (Date.now() - stuckTime.current > STUCK_TIMEOUT) {
-          console.log('[DEBUG] Player stuck timeout reached:', {
-            stuckDuration: Date.now() - stuckTime.current,
-            position: playerPos,
-            velocity: playerVel,
-          });
           respawnPlayer(true); // Pass true to use current position
           return;
         }
@@ -367,20 +344,28 @@ export function usePlayerControls() {
 
     const { forward, backward, left, right, jump } = controls.current;
 
-    // Skip further processing if no movement input
-    if (!forward && !backward && !left && !right && !jump) return;
+    // Skip further processing if no movement input from either source
+    if (!forward && !backward && !left && !right && !jump && !joystickDelta.x && !joystickDelta.y)
+      return;
 
     const impulse = new Vector3();
 
-    if (forward) impulse.z -= MOVEMENT_IMPULSE * delta;
-    if (backward) impulse.z += MOVEMENT_IMPULSE * delta;
+    // Handle keyboard input - invert Z axis for both forward/backward
+    if (forward) impulse.z += MOVEMENT_IMPULSE * delta; // Changed from -= to +=
+    if (backward) impulse.z -= MOVEMENT_IMPULSE * delta; // Changed from += to -=
     if (left) impulse.x -= MOVEMENT_IMPULSE * delta;
     if (right) impulse.x += MOVEMENT_IMPULSE * delta;
+
+    // Add joystick input - invert Z axis for joystick
+    if (joystickDelta.x || joystickDelta.y) {
+      impulse.x += joystickDelta.x * MOVEMENT_IMPULSE * delta;
+      impulse.z -= joystickDelta.y * MOVEMENT_IMPULSE * delta; // Changed to -= to match keyboard controls
+    }
 
     // Apply movement impulse if there's any horizontal movement
     if (impulse.lengthSq() > 0) {
       // Apply continuous force instead of impulse for smoother movement
-      applyForceToPlayer(localPlayerId, impulse.multiplyScalar(35)); // Increased from 20 for faster movement
+      applyForceToPlayer(localPlayerId, impulse.multiplyScalar(35));
     }
 
     // Handle jump
