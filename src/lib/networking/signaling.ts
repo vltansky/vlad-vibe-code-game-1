@@ -54,6 +54,7 @@ export class SignalingClient {
     if (!finalServerUrl) {
       if (useLocal) {
         finalServerUrl = 'http://localhost:8080';
+        console.log('[Signaling] Using local server:', finalServerUrl);
       } else {
         // Ensure we're using secure WebSocket for production
         const railwayUrl = 'https://vlad-vibe-code-game-1-production.up.railway.app';

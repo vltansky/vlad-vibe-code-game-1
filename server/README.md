@@ -1,79 +1,153 @@
 # WebRTC Signaling Server
 
-A simple Flask-based WebSocket signaling server for WebRTC peer-to-peer connections.
+A Socket.IO signaling server for WebRTC connections in multiplayer web games, with Redis for session management and scaling.
 
-## Setup
+## Features
 
-1. Create a virtual environment:
+- Real-time signaling for WebRTC peer-to-peer connections
+- Room-based player grouping
+- Redis integration for horizontal scaling
+- Fallback to in-memory adapter when Redis is unavailable
+- Comprehensive logging
+- Graceful shutdown handling
 
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+## Requirements
 
-2. Install dependencies:
+- Node.js 18+
+- Redis (optional, for horizontal scaling)
 
-   ```
-   pip install -r requirements.txt
-   ```
+## Installation
 
-3. Create a `.env` file:
+```bash
+# Install dependencies
+yarn install
+```
 
-   ```
-   SECRET_KEY=your_secret_key_here
-   PORT=8080
-   ```
+## Configuration
 
-4. Run the server:
-   ```
-   source venv/bin/activate.fish && python3 server.py
-   ```
+Create a `.env` file in the project root based on the example:
 
-The server will run on port 8080 by default.
+```
+# Server configuration
+PORT=8080
+LOG_LEVEL=info
 
-## Deployment
+# Security
+SECRET_KEY=your_secret_key_here
 
-### Railway.app
+# Redis configuration (optional)
+# REDIS_URL=redis://username:password@host:port
+```
 
-To deploy this server on Railway.app:
+## Running the Server
 
-1. Create a new project in Railway.app
-2. Connect your GitHub repository
-3. Configure the following settings:
-   - Root Directory: `/server`
-   - Start Command: `python3 server.py`
-   - Generate a public domain in the Settings tab
+```bash
+# Development mode with auto-restart
+yarn dev
 
-Railway will automatically install dependencies from requirements.txt and deploy your server.
+# Production mode
+yarn start
+```
 
 ## API
 
 ### Socket.IO Events
 
-- `connect`: Automatically fired when a user connects
-- `disconnect`: Automatically fired when a user disconnects
+#### Client → Server
+
 - `join_room`: Join a specific room
-  - Payload: `{ roomId: string }`
+
+  ```javascript
+  socket.emit('join_room', { roomId: 'game-room-123' });
+  ```
+
 - `leave_room`: Leave the current room
-  - Payload: `{ roomId: string }` (optional)
-- `signal`: Send WebRTC signaling data to another user
-  - Payload: `{ targetId: string, signal: any }`
-- `broadcast`: Broadcast data to all users in the room
-  - Payload: `{ data: any }`
 
-### Response Events
+  ```javascript
+  socket.emit('leave_room', { roomId: 'game-room-123' });
+  ```
 
-- `user_joined`: Fired when a user joins the room
-  - Payload: `{ userId: string, userCount: number }`
-- `user_left`: Fired when a user leaves the room
-  - Payload: `{ userId: string }`
-- `user_disconnected`: Fired when a user disconnects
-  - Payload: `{ userId: string }`
-- `room_users`: Sent to a user when they join a room
-  - Payload: `{ users: string[], userCount: number }`
-- `signal`: Received when another user sends a signal
-  - Payload: `{ userId: string, signal: any }`
-- `broadcast`: Received when another user broadcasts data
-  - Payload: `{ userId: string, data: any }`
-- `error`: Sent when an error occurs
-  - Payload: `{ message: string }`
+- `signal`: Send WebRTC signaling data to a specific peer
+
+  ```javascript
+  socket.emit('signal', {
+    targetId: 'peer-socket-id',
+    signal: {
+      /* signaling data */
+    },
+  });
+  ```
+
+- `broadcast`: Broadcast data to all peers in the room
+  ```javascript
+  socket.emit('broadcast', {
+    data: {
+      /* any data */
+    },
+  });
+  ```
+
+#### Server → Client
+
+- `user_joined`: When a new user joins the room
+
+  ```javascript
+  socket.on('user_joined', ({ userId, userCount }) => {
+    console.log(`User ${userId} joined, total users: ${userCount}`);
+  });
+  ```
+
+- `user_left`: When a user leaves the room
+
+  ```javascript
+  socket.on('user_left', ({ userId }) => {
+    console.log(`User ${userId} left`);
+  });
+  ```
+
+- `room_users`: List of users in the room (sent to new users)
+
+  ```javascript
+  socket.on('room_users', ({ users, userCount }) => {
+    console.log(`Users in room: ${users.join(', ')}`);
+  });
+  ```
+
+- `signal`: Signaling data from a peer
+
+  ```javascript
+  socket.on('signal', ({ userId, signal }) => {
+    // Handle incoming signal from userId
+  });
+  ```
+
+- `broadcast`: Broadcast data from a peer
+
+  ```javascript
+  socket.on('broadcast', ({ userId, data }) => {
+    // Handle broadcast from userId
+  });
+  ```
+
+- `error`: Error messages
+  ```javascript
+  socket.on('error', ({ message }) => {
+    console.error(`Server error: ${message}`);
+  });
+  ```
+
+## Deployment
+
+This server is designed to be deployed on Railway.app or similar services:
+
+1. Push code to a repository
+2. Create a new Railway project
+3. Connect to the repository
+4. Add environment variables (PORT, etc.)
+5. Deploy
+
+For horizontal scaling, add a Redis instance and configure the `REDIS_URL` environment variable.
+
+## License
+
+MIT

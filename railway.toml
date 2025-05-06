@@ -1,9 +1,10 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd server && pip install -r requirements.txt"
+buildCommand = "cd server && yarn install"
 
 [deploy]
-startCommand = "cd server && python server.py"
+startCommand = "cd server && yarn start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
-restartPolicyType = "on-failure"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
