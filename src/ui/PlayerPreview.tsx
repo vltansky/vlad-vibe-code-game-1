@@ -61,9 +61,10 @@ function CameraController() {
 type PlayerPreviewProps = {
   playerColor: string;
   playerSkinId: string;
+  userName: string;
 };
 
-export function PlayerPreview({ playerColor, playerSkinId }: PlayerPreviewProps) {
+export function PlayerPreview({ playerColor, playerSkinId, userName }: PlayerPreviewProps) {
   return (
     <div className="pointer-events-none fixed top-1/2 left-1/2 z-30 hidden h-48 w-48 -translate-x-1/2 -translate-y-1/2 transform overflow-visible md:block">
       {/* Loading spinner shown while Canvas is initializing */}
@@ -115,7 +116,7 @@ export function PlayerPreview({ playerColor, playerSkinId }: PlayerPreviewProps)
 
       {/* Label overlay to confirm the preview is visible */}
       <div className="bg-opacity-50 pointer-events-none absolute right-0 bottom-0 left-0 bg-black p-1 text-center text-xs text-white">
-        Preview
+        {userName}
       </div>
     </div>
   );

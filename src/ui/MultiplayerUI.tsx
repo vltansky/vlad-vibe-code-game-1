@@ -153,7 +153,9 @@ export function MultiplayerUI() {
   return (
     <>
       {/* Player Preview - Show only when not connected */}
-      {!isConnected && <PlayerPreview playerColor={playerColor} playerSkinId={playerSkin} />}
+      {!isConnected && (
+        <PlayerPreview playerColor={playerColor} playerSkinId={playerSkin} userName={nickname} />
+      )}
 
       {/* Mobile menu toggle button */}
       {isMobile && isConnected && (
@@ -176,7 +178,7 @@ export function MultiplayerUI() {
       {(!isMobile || showMenu) && (
         <div className={`absolute ${isMobile ? 'inset-0 z-10' : 'top-4 right-4 z-10'} text-white`}>
           <div
-            className={` ${isMobile ? 'h-full w-full rounded-none' : 'min-w-[360px] rounded-lg'} border border-gray-700/50 bg-gray-900/90 p-6 shadow-xl backdrop-blur-md ${isMobile ? 'flex flex-col' : ''} `}
+            className={` ${isMobile ? 'h-full w-full rounded-none' : 'w-[360px] rounded-lg'} border border-gray-700/50 bg-gray-900/90 p-6 shadow-xl backdrop-blur-md ${isMobile ? 'flex flex-col' : ''} `}
           >
             <div className="mb-6 flex items-center gap-3">
               <Gamepad2 className="text-gray-400" size={24} />
@@ -350,10 +352,6 @@ export function MultiplayerUI() {
                         </p>
                       </>
                     )}
-
-                    <p className="flex items-center gap-1.5">
-                      <span className="key-indicator">E</span> - Push Wave
-                    </p>
                     <p className="flex items-center gap-1.5">
                       <span className="key-indicator">F</span> - Drop Bomb
                     </p>
