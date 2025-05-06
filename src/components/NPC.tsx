@@ -10,7 +10,7 @@ import * as CANNON from 'cannon-es';
 import { getPhysicsWorld, getPlayerMaterial } from '@/systems/physics';
 
 // Time in ms between NPC bomb attacks
-const ATTACK_COOLDOWN = 800; // 800 ms
+const ATTACK_COOLDOWN = 0; // disable for now! BOMB
 // Distance at which NPC will use bomb ability
 const ATTACK_DISTANCE = 2.5;
 // Distance squared (avoid sqrt calculations)
