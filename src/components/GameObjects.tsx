@@ -9,6 +9,7 @@ import { usePlayerControls } from '@/hooks/usePlayerControls';
 import { useFollowCamera } from '@/hooks/useFollowCamera';
 import { initPhysics, updatePhysics, cleanupPhysics } from '@/systems/physics';
 import { Vector3 } from 'three';
+import { PeerData } from '@/lib/networking/peer';
 
 // Define a type for the bomb payload received from other players
 interface BombEventPayload {
@@ -141,27 +142,26 @@ export function GameObjects() {
   useEffect(() => {
     if (!isConnected) return;
 
-    const handleRemoteBombEvent = () => {
-      // Get our peerManager
-      const peerManager = useGameStore.getState().peerManager;
+    const peerManager = useGameStore.getState().peerManager;
+    if (!peerManager) return;
 
-      if (!peerManager) return;
-
-      // Set up data event listener to receive bomb events
-      peerManager.on('data', (peerId, data) => {
-        // Listen for both event types for compatibility
-        if (data.type === 'bomb_event' || data.type === 'bomb_ability_used') {
-          // We received a bomb event from another player
-          console.log(`[GameObjects] Received bomb event from ${peerId}:`, data.payload);
-
-          const bombPayload = data.payload as BombEventPayload;
+    const handleBombData = (peerId: string, data: PeerData) => {
+      if (data.type === 'bomb_event' || data.type === 'bomb_ability_used') {
+        console.log(`[GameObjects] Received bomb event from ${peerId}:`, data.payload);
+        const bombPayload = data.payload as BombEventPayload;
+        if (
+          bombPayload &&
+          bombPayload.position &&
+          typeof bombPayload.position.x === 'number' &&
+          typeof bombPayload.position.y === 'number' &&
+          typeof bombPayload.position.z === 'number'
+        ) {
           const bombPosition = new Vector3(
             bombPayload.position.x,
             bombPayload.position.y,
             bombPayload.position.z
           );
 
-          // Add bomb effect for the remote player
           setBombEffects((prev) => [
             ...prev,
             {
@@ -169,19 +169,21 @@ export function GameObjects() {
               position: bombPosition,
             },
           ]);
+        } else {
+          console.warn(
+            '[GameObjects] Received bomb event with malformed payload from:',
+            peerId,
+            data.payload
+          );
         }
-      });
+      }
     };
 
-    // Initialize handling remote bomb events
-    handleRemoteBombEvent();
+    peerManager.on('data', handleBombData);
 
-    // Return cleanup function
     return () => {
-      const peerManager = useGameStore.getState().peerManager;
       if (peerManager) {
-        // Clean up the data event listener
-        peerManager.off('data');
+        peerManager.off('data', handleBombData);
       }
     };
   }, [isConnected]);

@@ -1,5 +1,5 @@
 import { SignalingClient, SignalingMessage, RoomUsers } from './signaling';
-import { PeerConnection, PeerData, PeerOptions } from './peer';
+import { PeerConnection, PeerData, PeerConnectionOptions } from './peer';
 import SimplePeer from 'simple-peer';
 
 export type PeerManagerOptions = {
@@ -26,14 +26,14 @@ export class PeerManager {
   private signalingClient: SignalingClient;
   private peers: Map<string, PeerConnection> = new Map();
   private roomId: string | null = null;
-  private listeners: Partial<PeerManagerEvents> = {};
+  private eventListeners: Map<keyof PeerManagerEvents, Set<(...args: any[]) => void>> = new Map();
   private debug: boolean;
-  private peerOptions: PeerOptions;
+  private peerConnectionOptionsForPeer: PeerConnectionOptions;
 
   constructor(options: PeerManagerOptions = {}) {
     this.debug = options.debug || false;
     this.signalingClient = new SignalingClient(options.signalingServer);
-    this.peerOptions = {
+    this.peerConnectionOptionsForPeer = {
       debug: this.debug,
       config: {
         iceServers: options.iceServers || [
@@ -46,52 +46,59 @@ export class PeerManager {
     this.setupSignalingListeners();
   }
 
+  private emit<K extends keyof PeerManagerEvents>(
+    event: K,
+    ...args: Parameters<PeerManagerEvents[K]>
+  ): void {
+    const callbacks = this.eventListeners.get(event);
+    if (callbacks) {
+      callbacks.forEach((callback) => {
+        try {
+          callback(...args);
+        } catch (error) {
+          console.error(`Error in event listener for ${event}:`, error);
+        }
+      });
+    }
+  }
+
   private setupSignalingListeners(): void {
-    // Handle connection events
     this.signalingClient.on('connect', () => {
       if (this.debug) console.log('Connected to signaling server');
-      this.listeners.clientConnected?.();
+      this.emit('clientConnected');
     });
 
     this.signalingClient.on('disconnect', () => {
       if (this.debug) console.log('Disconnected from signaling server');
-      this.listeners.clientDisconnected?.();
-
-      // Close all peer connections
+      this.emit('clientDisconnected');
       this.closeAllPeers();
     });
 
     this.signalingClient.on('reconnecting', (attempt) => {
       if (this.debug) console.log(`Reconnecting to signaling server, attempt ${attempt}`);
-      this.listeners.clientReconnecting?.(attempt);
+      this.emit('clientReconnecting', attempt);
     });
 
     this.signalingClient.on('reconnect_failed', () => {
       if (this.debug) console.log('Reconnection to signaling server failed');
-      this.listeners.clientReconnectFailed?.();
+      this.emit('clientReconnectFailed');
     });
 
-    // Handle room events
     this.signalingClient.on('room_users', (data: RoomUsers) => {
       if (this.debug) console.log('Room users:', data);
-
-      // Create peer connections for each user already in the room
       data.users.forEach((userId) => {
         if (userId !== this.signalingClient.id && !this.peers.has(userId)) {
           this.createPeer(userId, false);
         }
       });
-
       if (this.roomId) {
-        this.listeners.roomJoined?.(this.roomId, data.userCount);
+        this.emit('roomJoined', this.roomId, data.userCount);
       }
     });
 
     this.signalingClient.on('user_joined', (data) => {
       if (this.debug) console.log('User joined:', data);
-      this.listeners.userJoined?.(data.userId);
-
-      // Create a peer connection for the new user
+      this.emit('userJoined', data.userId);
       if (data.userId !== this.signalingClient.id && !this.peers.has(data.userId)) {
         this.createPeer(data.userId, true);
       }
@@ -99,32 +106,22 @@ export class PeerManager {
 
     this.signalingClient.on('user_left', (data) => {
       if (this.debug) console.log('User left:', data);
-      this.listeners.userLeft?.(data.userId);
-
-      // Close the peer connection
+      this.emit('userLeft', data.userId);
       this.closePeer(data.userId);
     });
 
     this.signalingClient.on('user_disconnected', (data) => {
       if (this.debug) console.log('User disconnected:', data);
-      this.listeners.userLeft?.(data.userId);
-
-      // Close the peer connection
+      this.emit('userLeft', data.userId);
       this.closePeer(data.userId);
     });
 
-    // Handle signaling
     this.signalingClient.on('signal', (data: SignalingMessage) => {
       if (this.debug) console.log('Received signal from:', data.userId);
-
-      // Get or create the peer
       let peer = this.peers.get(data.userId);
-
       if (!peer) {
         peer = this.createPeer(data.userId, false);
       }
-
-      // Process the signal
       peer.signal(data.signal as SimplePeer.SignalData);
     });
   }
@@ -133,41 +130,33 @@ export class PeerManager {
     if (this.debug)
       console.log(`Creating ${initiator ? 'initiator' : 'receiver'} peer for ${peerId}`);
 
-    const peer = new PeerConnection(initiator, this.peerOptions);
+    const peer = new PeerConnection(initiator, this.peerConnectionOptionsForPeer);
 
-    // Handle signals
     peer.on('signal', (signal: SimplePeer.SignalData) => {
       this.signalingClient.sendSignal(peerId, signal);
     });
 
-    // Handle connection
     peer.on('connect', () => {
       if (this.debug) console.log(`Connected to peer: ${peerId}`);
-      this.listeners.peerConnect?.(peerId);
+      this.emit('peerConnect', peerId);
     });
 
-    // Handle data
     peer.on('data', (data: PeerData) => {
       console.log(`[PeerManager] Received data from PeerConnection ${peerId}:`, data);
-      this.listeners.data?.(peerId, data);
+      this.emit('data', peerId, data);
     });
 
-    // Handle close
     peer.on('close', () => {
       if (this.debug) console.log(`Peer connection closed: ${peerId}`);
       this.peers.delete(peerId);
-      this.listeners.peerDisconnect?.(peerId);
+      this.emit('peerDisconnect', peerId);
     });
 
-    // Handle errors
     peer.on('error', (error: Error) => {
       console.error(`Peer error for ${peerId}:`, error);
-      // Don't auto-close on error, wait for close event
     });
 
-    // Store the peer
     this.peers.set(peerId, peer);
-
     return peer;
   }
 
@@ -175,8 +164,6 @@ export class PeerManager {
     const peer = this.peers.get(peerId);
     if (peer) {
       peer.close();
-      this.peers.delete(peerId);
-      this.listeners.peerDisconnect?.(peerId);
     }
   }
 
@@ -186,21 +173,19 @@ export class PeerManager {
     }
   }
 
-  // Connect to the signaling server
   connect(): void {
     this.signalingClient.connect();
   }
 
-  // Disconnect from the signaling server
   disconnect(): void {
     if (this.roomId) {
       this.leaveRoom();
+    } else {
+      this.closeAllPeers();
     }
-    this.closeAllPeers();
     this.signalingClient.disconnect();
   }
 
-  // Join a room
   joinRoom(roomId: string): void {
     if (this.roomId) {
       this.leaveRoom();
@@ -210,27 +195,24 @@ export class PeerManager {
     this.signalingClient.joinRoom(roomId);
   }
 
-  // Leave the current room
   leaveRoom(): void {
     if (this.roomId) {
       this.signalingClient.leaveRoom(this.roomId);
       this.roomId = null;
       this.closeAllPeers();
-      this.listeners.roomLeft?.();
+      this.emit('roomLeft');
     }
   }
 
-  // Send data to all peers
   broadcast(type: string, payload: unknown): void {
-    for (const peer of this.peers.values()) {
-      console.log(`[PeerManager] Broadcasting data to ${peer.id} - Type: ${type}`);
+    for (const [peerId, peer] of this.peers.entries()) {
+      console.log(`[PeerManager] Broadcasting data to ${peerId} - Type: ${type}`);
       if (peer.isConnected) {
         peer.send(type, payload);
       }
     }
   }
 
-  // Send data to a specific peer
   send(peerId: string, type: string, payload: unknown): void {
     const peer = this.peers.get(peerId);
     if (peer && peer.isConnected) {
@@ -241,32 +223,39 @@ export class PeerManager {
     }
   }
 
-  // Register event listeners
   on<K extends keyof PeerManagerEvents>(event: K, callback: PeerManagerEvents[K]): void {
-    this.listeners[event] = callback;
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Set());
+    }
+    this.eventListeners.get(event)!.add(callback as (...args: any[]) => void);
   }
 
-  // Unregister event listeners
-  off<K extends keyof PeerManagerEvents>(event: K): void {
-    delete this.listeners[event];
+  off<K extends keyof PeerManagerEvents>(event: K, callback?: PeerManagerEvents[K]): void {
+    const callbacks = this.eventListeners.get(event);
+    if (callbacks) {
+      if (callback) {
+        callbacks.delete(callback as (...args: any[]) => void);
+        if (callbacks.size === 0) {
+          this.eventListeners.delete(event);
+        }
+      } else {
+        this.eventListeners.delete(event);
+      }
+    }
   }
 
-  // Get a list of connected peer IDs
   getPeerIds(): string[] {
     return Array.from(this.peers.keys());
   }
 
-  // Check if we're connected to the signaling server
   get isConnected(): boolean {
     return this.signalingClient.isConnected;
   }
 
-  // Get our client ID
   get clientId(): string | null {
     return this.signalingClient.id;
   }
 
-  // Get the current room ID
   get currentRoomId(): string | null {
     return this.roomId;
   }
