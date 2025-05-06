@@ -24,6 +24,7 @@ interface BombEventPayload {
 type BombEffectData = {
   id: string;
   position: Vector3;
+  sourceTimestamp: number; // Added for debugging and timeout calculation
 };
 
 // NPC configuration
@@ -81,13 +82,16 @@ export function GameObjects() {
 
   // Add NPC bomb handler
   const handleNPCBomb = useCallback((position: Vector3, npcId: string) => {
-    setBombEffects((prev) => [
-      ...prev,
-      {
-        id: `bomb-${npcId}-${Date.now()}`,
-        position: position.clone(),
-      },
-    ]);
+    const bombId = `bomb-npc-${npcId}-${Date.now()}`;
+    const newBombEffect: BombEffectData = {
+      id: bombId,
+      position: position.clone(),
+      sourceTimestamp: Date.now(), // Store creation timestamp
+    };
+    console.log(
+      `[GameObjects] Creating NPC bomb effect: ID ${bombId}, Timestamp ${newBombEffect.sourceTimestamp}`
+    );
+    setBombEffects((prev) => [...prev, newBombEffect]);
   }, []);
 
   // Helper function to get a random corner position (same as in gameStore.ts)
@@ -114,40 +118,33 @@ export function GameObjects() {
   // Listen for bomb events
   useEffect(() => {
     const unsubscribe = useGameStore.subscribe((state, prevState) => {
-      // Check if a player used a bomb (by comparing lastBombTime)
       Object.values(state.players).forEach((player) => {
         const prevPlayer = prevState.players[player.id];
         if (prevPlayer && player.lastBombTime > prevPlayer.lastBombTime) {
-          // Add a bomb effect at the player's position
-          setBombEffects((prev) => [
-            ...prev,
-            {
-              id: `bomb-${player.id}-${player.lastBombTime}`,
-              position: player.position.clone(),
-            },
-          ]);
-
+          const bombId = `bomb-local-${player.id}-${player.lastBombTime}`;
+          const newBombEffect: BombEffectData = {
+            id: bombId,
+            position: player.position.clone(),
+            sourceTimestamp: player.lastBombTime, // Use lastBombTime as the source for local
+          };
           console.log(
-            `[GameObjects] Adding bomb effect for player ${player.id} at position:`,
-            player.position
+            `[GameObjects] Creating local player bomb effect: ID ${bombId}, Timestamp ${newBombEffect.sourceTimestamp}`
           );
+          setBombEffects((prev) => [...prev, newBombEffect]);
         }
       });
     });
-
     return () => unsubscribe();
   }, []);
 
   // Add a new effect to listen for remote bomb events from the peerManager
   useEffect(() => {
     if (!isConnected) return;
-
     const peerManager = useGameStore.getState().peerManager;
     if (!peerManager) return;
 
     const handleBombData = (peerId: string, data: PeerData) => {
       if (data.type === 'bomb_event' || data.type === 'bomb_ability_used') {
-        console.log(`[GameObjects] Received bomb event from ${peerId}:`, data.payload);
         const bombPayload = data.payload as BombEventPayload;
         if (
           bombPayload &&
@@ -161,24 +158,26 @@ export function GameObjects() {
             bombPayload.position.y,
             bombPayload.position.z
           );
-
-          setBombEffects((prev) => [
-            ...prev,
-            {
-              id: `bomb-remote-${peerId}-${Date.now()}`,
-              position: bombPosition,
-            },
-          ]);
+          const currentTimestamp = Date.now(); // Use current time for remote bombs
+          const bombId = `bomb-remote-${peerId}-${currentTimestamp}`;
+          const newBombEffect: BombEffectData = {
+            id: bombId,
+            position: bombPosition,
+            sourceTimestamp: currentTimestamp,
+          };
+          console.log(
+            `[GameObjects] Creating remote player bomb effect: ID ${bombId}, Timestamp ${newBombEffect.sourceTimestamp} from peer ${peerId}`
+          );
+          setBombEffects((prev) => [...prev, newBombEffect]);
         } else {
           console.warn(
-            '[GameObjects] Received bomb event with malformed payload from:',
+            '[GameObjects] Received remote bomb event with malformed payload from:',
             peerId,
             data.payload
           );
         }
       }
     };
-
     peerManager.on('data', handleBombData);
 
     return () => {
@@ -195,37 +194,87 @@ export function GameObjects() {
 
   // Add a useEffect to ensure bomb effects are cleaned up even if animation fails
   useEffect(() => {
-    // Safety cleanup - remove any bomb effects that have been around too long
-    // This ensures bombs eventually disappear even if animation fails
     if (bombEffects.length > 0) {
-      const BOMB_MAX_LIFETIME = 3000; // 3 seconds max lifetime for any bomb effect
+      console.log(
+        `[GameObjects Global Fallback] Effect RUN. Active effects (${bombEffects.length}):`,
+        bombEffects.map((ef) => ef.id)
+      );
+      const BOMB_MAX_LIFETIME = 3000; // 3 seconds max lifetime
 
-      // Create a cleanup timeout for each bomb
       const timeouts = bombEffects.map((effect) => {
-        // Extract timestamp from the bomb ID if possible
-        const bombTimestamp = effect.id.includes('-')
-          ? parseInt(effect.id.split('-').pop() || '0')
-          : Date.now();
-
-        const timeElapsed = Date.now() - bombTimestamp;
+        const bombTimestamp = effect.sourceTimestamp; // Use stored sourceTimestamp
+        const currentTime = Date.now();
+        const timeElapsed = currentTime - bombTimestamp;
         const remainingTime = Math.max(0, BOMB_MAX_LIFETIME - timeElapsed);
 
+        console.log(
+          `[GameObjects Global Fallback] SETTING TIMEOUT for Bomb ID: ${effect.id}. SourceTS: ${bombTimestamp}, CurrentTS: ${currentTime}, Elapsed: ${timeElapsed}ms, Remaining: ${remainingTime}ms`
+        );
+
         return setTimeout(() => {
-          setBombEffects((prev) => prev.filter((e) => e.id !== effect.id));
-          console.log(`[GameObjects] Force removing bomb effect ${effect.id} after timeout`);
+          console.log(`[GameObjects Global Fallback] TIMEOUT FIRED for Bomb ID: ${effect.id}.`);
+          setBombEffects((prev) => {
+            // Check if the effect still exists, it might have been removed by onComplete normally
+            const effectStillExists = prev.some((e) => e.id === effect.id);
+            if (!effectStillExists) {
+              console.log(
+                `[GameObjects Global Fallback] Bomb ID: ${effect.id} was already removed (likely by onComplete). No action needed by this timeout. Prev state (IDs):`,
+                prev.map((p) => p.id)
+              );
+              return prev; // No change needed
+            }
+
+            console.log(
+              `[GameObjects Global Fallback] Attempting to remove Bomb ID: ${effect.id} via timeout. Prev state (IDs):`,
+              prev.map((p) => p.id)
+            );
+            const newState = prev.filter((e) => e.id !== effect.id);
+            console.log(
+              `[GameObjects Global Fallback] Bomb ID: ${effect.id} removed by timeout. New state (IDs):`,
+              newState.map((ns) => ns.id)
+            );
+            return newState;
+          });
         }, remainingTime);
       });
 
+      // Cleanup function for this effect
       return () => {
+        console.log(
+          '[GameObjects Global Fallback] Effect CLEANUP. Clearing timeouts for IDs:',
+          bombEffects.map((ef) => ef.id)
+        );
         timeouts.forEach(clearTimeout);
       };
+    } else {
+      // console.log('[GameObjects Global Fallback] No bomb effects, skipping timeout setup.');
     }
   }, [bombEffects]);
 
   // Remove completed bomb effects
-  const handleBombEffectComplete = (bombId: string) => {
-    setBombEffects((prev) => prev.filter((effect) => effect.id !== bombId));
-  };
+  const handleBombEffectComplete = useCallback((bombId: string) => {
+    console.log(`[GameObjects] handleBombEffectComplete CALLED for Bomb ID: ${bombId}`);
+    setBombEffects((prev) => {
+      const bombExists = prev.some((e) => e.id === bombId);
+      if (!bombExists) {
+        console.warn(
+          `[GameObjects] handleBombEffectComplete: Bomb ID: ${bombId} was ALREADY REMOVED. Prev state (IDs):`,
+          prev.map((p) => p.id)
+        );
+        return prev;
+      }
+      console.log(
+        `[GameObjects] handleBombEffectComplete: Removing Bomb ID: ${bombId}. Prev state (IDs):`,
+        prev.map((p) => p.id)
+      );
+      const newState = prev.filter((effect) => effect.id !== bombId);
+      console.log(
+        `[GameObjects] handleBombEffectComplete: Bomb ID: ${bombId} removed. New state (IDs):`,
+        newState.map((ns) => ns.id)
+      );
+      return newState;
+    });
+  }, []);
 
   return (
     <>
@@ -252,6 +301,7 @@ export function GameObjects() {
       {bombEffects.map((effect) => (
         <BombEffect
           key={effect.id}
+          id={effect.id}
           position={effect.position}
           onComplete={() => handleBombEffectComplete(effect.id)}
         />
