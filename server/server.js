@@ -33,12 +33,7 @@ const io = new Server(server, {
   },
 });
 
-// Store connected users and rooms (used both with and without Redis)
-const users = {};
-const rooms = {};
-
 // Redis setup
-let isUsingRedis = false;
 async function setupRedis() {
   if (process.env.REDIS_URL) {
     try {
@@ -48,7 +43,6 @@ async function setupRedis() {
       await Promise.all([pubClient.connect(), subClient.connect()]);
 
       io.adapter(createAdapter(pubClient, subClient));
-      isUsingRedis = true;
 
       logger.info('Connected to Redis server');
 
@@ -60,15 +54,17 @@ async function setupRedis() {
     } catch (err) {
       logger.error(`Failed to connect to Redis: ${err}`);
       logger.info('Falling back to in-memory adapter');
-      isUsingRedis = false;
     }
   } else {
     logger.info('No REDIS_URL provided, using in-memory adapter');
-    isUsingRedis = false;
   }
 
   return null;
 }
+
+// Store connected users and rooms (used when Redis is not available)
+const users = {};
+const rooms = {};
 
 // Routes
 app.get('/', (req, res) => {
@@ -86,7 +82,7 @@ io.on('connection', (socket) => {
   };
 
   // Handle join room
-  socket.on('join_room', async (data) => {
+  socket.on('join_room', (data) => {
     const roomId = data.roomId;
 
     if (!roomId) {
@@ -100,63 +96,23 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     users[socket.id].room = roomId;
 
-    // When using Redis, get all clients in the room
-    // This needs special handling for Redis adapter
-    let roomUsers = [];
-
-    if (isUsingRedis) {
-      try {
-        // Get all sockets in the room across all Socket.IO instances
-        const sockets = await io.in(roomId).fetchSockets();
-        roomUsers = sockets.map((s) => s.id);
-
-        // Update our local tracking
-        if (!rooms[roomId]) {
-          rooms[roomId] = [];
-        }
-
-        // Make sure we don't duplicate entries
-        for (const userId of roomUsers) {
-          if (!rooms[roomId].includes(userId)) {
-            rooms[roomId].push(userId);
-          }
-        }
-
-        logger.info(`Redis: Room ${roomId} has ${roomUsers.length} users`);
-      } catch (err) {
-        logger.error(`Error fetching room sockets: ${err}`);
-
-        // Fallback to local tracking - less accurate with Redis
-        if (!rooms[roomId]) {
-          rooms[roomId] = [];
-        }
-        if (!rooms[roomId].includes(socket.id)) {
-          rooms[roomId].push(socket.id);
-        }
-        roomUsers = rooms[roomId];
-      }
-    } else {
-      // Add user to local room tracking when not using Redis
-      if (!rooms[roomId]) {
-        rooms[roomId] = [];
-      }
-      if (!rooms[roomId].includes(socket.id)) {
-        rooms[roomId].push(socket.id);
-      }
-      roomUsers = rooms[roomId];
+    // Add user to room tracking
+    if (!rooms[roomId]) {
+      rooms[roomId] = [];
     }
+    rooms[roomId].push(socket.id);
 
     // Notify others in the room (except sender)
     socket.to(roomId).emit('user_joined', {
       userId: socket.id,
-      userCount: roomUsers.length,
+      userCount: rooms[roomId].length,
     });
 
     // Send current users in the room to the new user
-    logger.info(`Room users: ${roomUsers.join(', ')}`);
+    logger.info(`Room users: ${rooms[roomId].join(', ')}`);
     socket.emit('room_users', {
-      users: roomUsers,
-      userCount: roomUsers.length,
+      users: rooms[roomId],
+      userCount: rooms[roomId].length,
     });
   });
 
@@ -246,9 +202,7 @@ async function startServer() {
 
   const PORT = process.env.PORT || 8080;
   server.listen(PORT, () => {
-    logger.info(
-      `Server listening on port ${PORT} (Redis: ${isUsingRedis ? 'enabled' : 'disabled'})`
-    );
+    logger.info(`Server listening on port ${PORT}`);
   });
 
   // Handle graceful shutdown
