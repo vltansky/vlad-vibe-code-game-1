@@ -16,9 +16,9 @@ const ATTACK_DISTANCE = 2.5;
 // Distance squared (avoid sqrt calculations)
 const ATTACK_DISTANCE_SQ = ATTACK_DISTANCE * ATTACK_DISTANCE;
 // Reaction delay in ms - how long before NPC reacts to player position changes
-const REACTION_DELAY = 400; // Reduced for faster reaction
+const REACTION_DELAY = 200; // Reduced for faster reaction
 // NPC movement speed
-const MOVEMENT_SPEED = 10; // Increased for faster movement
+const MOVEMENT_SPEED = 15; // Increased for faster movement
 // Distance at which NPC will stop approaching the player
 const MIN_FOLLOW_DISTANCE = 1.8;
 const MIN_FOLLOW_DISTANCE_SQ = MIN_FOLLOW_DISTANCE * MIN_FOLLOW_DISTANCE;
@@ -62,6 +62,7 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
   const lastMoveTime = useRef<number>(0);
   const initialPosition = useRef(position.clone());
   const targetPlayerPosition = useRef<Vector3 | null>(null);
+  const isMoving = useRef<boolean>(false);
 
   // Initialize NPC physics
   useEffect(() => {
@@ -76,34 +77,28 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
     // Create sphere shape for NPC
     const sphereShape = new CANNON.Sphere(0.5);
     const sphereBody = new CANNON.Body({
-      mass: 1,
+      mass: 2, // Increased mass to ensure forces have more impact
       shape: sphereShape,
       position: new CANNON.Vec3(position.x, position.y, position.z),
       material: playerMaterial,
       collisionFilterGroup: NPC_GROUP,
-      // Only collide with ground and walls, not with players
-      collisionFilterMask: GROUND_GROUP | WALL_GROUP,
+      // Include PLAYER_GROUP in collision mask to detect player presence
+      collisionFilterMask: GROUND_GROUP | WALL_GROUP | PLAYER_GROUP,
       fixedRotation: true,
-      linearDamping: 0.3, // Reduced damping for faster movement
+      linearDamping: 0.2, // Reduced damping for smoother movement
     });
 
     // Keep collisionResponse true for proper physics with the environment
     sphereBody.collisionResponse = true;
 
-    // Create a special shape just for detecting player proximity without physical interaction
-    const sensorShape = new CANNON.Sphere(0.5);
-    sphereBody.addShape(sensorShape);
-
-    // The second shape is only for sensing players
-    sphereBody.shapes[1].collisionFilterGroup = NPC_GROUP;
-    sphereBody.shapes[1].collisionFilterMask = PLAYER_GROUP;
-
-    // This is the key - disable collision response just for this shape
-    // @ts-expect-error - Cannon-es types don't expose shapeCollisionResponse
-    sphereBody.shapeCollisionResponse = [true, false];
+    // Ensure the body can move freely
+    sphereBody.allowSleep = false;
 
     npcPhysicsBody.current = sphereBody;
     world.addBody(sphereBody);
+
+    // Debug logging to verify initialization
+    console.log(`[NPC] ${id} initialized at position:`, position);
 
     return () => {
       if (world && sphereBody) {
@@ -220,6 +215,9 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
           }
           targetPlayerPosition.current.copy(closestPlayer.position);
           lastTargetUpdateTime.current = currentTime;
+
+          // Debug log player tracking
+          console.log(`[NPC] ${id} tracking player at:`, targetPlayerPosition.current);
         }
       }
     }
@@ -247,34 +245,42 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
       }
 
       // Move towards target player if not too close
-      if (distanceSq > MIN_FOLLOW_DISTANCE_SQ && currentTime - lastMoveTime.current > 30) {
+      if (distanceSq > MIN_FOLLOW_DISTANCE_SQ && currentTime - lastMoveTime.current > 16) {
         // Calculate direction vector from NPC to player (reuse _direction)
         _direction.subVectors(targetPlayerPosition.current, _physicsPosition).normalize();
 
-        // Apply force to physics body
-        _cannonForce.set(
-          _direction.x * MOVEMENT_SPEED,
-          0, // Keep y-force at 0 to prevent flying
-          _direction.z * MOVEMENT_SPEED
-        );
+        // Apply direct velocity control for better responsiveness
+        const targetVelocity = {
+          x: _direction.x * MOVEMENT_SPEED,
+          z: _direction.z * MOVEMENT_SPEED,
+        };
 
-        _cannonPoint.copy(body.position);
-        body.applyForce(_cannonForce, _cannonPoint);
+        // Blend current velocity with target for smooth control
+        body.velocity.x = body.velocity.x * 0.5 + targetVelocity.x * 0.5;
+        body.velocity.z = body.velocity.z * 0.5 + targetVelocity.z * 0.5;
 
-        // Add direct velocity component for responsive movement
-        body.velocity.x += _direction.x * 3;
-        body.velocity.z += _direction.z * 3;
+        // Add impulse for immediate movement
+        _cannonForce.set(_direction.x * 20, 0, _direction.z * 20);
+        body.applyImpulse(_cannonForce, body.position);
+
+        // Ensure Y velocity isn't causing the NPC to fly
+        if (Math.abs(body.position.y - initialPosition.current.y) > 0.5 && body.velocity.y > 0) {
+          body.velocity.y = 0;
+        }
 
         // Cap maximum velocity for stability
         const speedSq = body.velocity.x * body.velocity.x + body.velocity.z * body.velocity.z;
-        if (speedSq > 225) {
-          // 15^2
-          const scale = 15 / Math.sqrt(speedSq);
+        if (speedSq > 400) {
+          // 20^2
+          const scale = 20 / Math.sqrt(speedSq);
           body.velocity.x *= scale;
           body.velocity.z *= scale;
         }
 
         lastMoveTime.current = currentTime;
+        isMoving.current = true;
+      } else {
+        isMoving.current = false;
       }
 
       // Update rotation to face player - reuse existing object
