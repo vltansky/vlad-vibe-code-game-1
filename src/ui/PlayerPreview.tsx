@@ -65,7 +65,7 @@ type PlayerPreviewProps = {
 
 export function PlayerPreview({ playerColor, playerSkinId }: PlayerPreviewProps) {
   return (
-    <div className="pointer-events-none fixed top-1/2 left-1/2 z-30 h-48 w-48 -translate-x-1/2 -translate-y-1/2 transform overflow-visible">
+    <div className="pointer-events-none fixed top-1/2 left-1/2 z-30 hidden h-48 w-48 -translate-x-1/2 -translate-y-1/2 transform overflow-visible md:block">
       {/* Loading spinner shown while Canvas is initializing */}
       <div
         className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center"
