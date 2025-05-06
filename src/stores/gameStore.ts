@@ -81,7 +81,7 @@ export type GameState = {
 };
 
 // Constants
-const BOMB_COOLDOWN = 10000; // 10 seconds between bombs
+const BOMB_COOLDOWN = 500; // reasonable cooldown to prevent cheating but still allow aggressive bomb usage
 const WINNING_SCORE = 60; // 60 points to win (1 minute as king)
 const CONNECTION_TIMEOUT = 15000; // 15 seconds connection timeout
 
@@ -825,15 +825,27 @@ export const useGameStore = create<GameState>((set, get) => {
         applyBombEffect(localPlayer.position, localPlayerId);
       });
 
-      // Broadcast bomb action to all peers
-      peerManager.broadcast('bomb_ability_used', {
+      // Prepare the bomb payload
+      const bombPayload = {
         playerId: localPlayerId,
         position: {
           x: localPlayer.position.x,
           y: localPlayer.position.y,
           z: localPlayer.position.z,
         },
-      });
+        timestamp: currentTime,
+      };
+
+      // Broadcast bomb action to all peers using both event types for compatibility
+      peerManager.broadcast('bomb_ability_used', bombPayload);
+
+      // Also send as bomb_event which our new listener is watching for
+      peerManager.broadcast('bomb_event', bombPayload);
+
+      console.log(
+        `[GameStore] Local player ${localPlayerId} used bomb ability at:`,
+        localPlayer.position
+      );
     },
 
     canUseBomb: () => {

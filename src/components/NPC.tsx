@@ -10,7 +10,7 @@ import * as CANNON from 'cannon-es';
 import { getPhysicsWorld, getPlayerMaterial } from '@/systems/physics';
 
 // Time in ms between NPC bomb attacks
-const ATTACK_COOLDOWN = 500; // Reasonable cooldown to prevent cheating but still allow aggressive NPC behavior
+const ATTACK_COOLDOWN = 1500; // Reasonable cooldown to prevent cheating but still allow aggressive NPC behavior
 // Distance at which NPC will use bomb ability
 const ATTACK_DISTANCE = 2.5;
 // Distance squared (avoid sqrt calculations)
