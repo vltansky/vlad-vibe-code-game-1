@@ -16,9 +16,9 @@ const ATTACK_DISTANCE = 2.5;
 // Distance squared (avoid sqrt calculations)
 const ATTACK_DISTANCE_SQ = ATTACK_DISTANCE * ATTACK_DISTANCE;
 // Reaction delay in ms - how long before NPC reacts to player position changes
-const REACTION_DELAY = 200; // Reduced for faster reaction
+const REACTION_DELAY = 500; // Increased for slower reaction
 // NPC movement speed
-const MOVEMENT_SPEED = 15; // Increased for faster movement
+const MOVEMENT_SPEED = 6; // Reduced for slower movement
 // Distance at which NPC will stop approaching the player
 const MIN_FOLLOW_DISTANCE = 1.8;
 const MIN_FOLLOW_DISTANCE_SQ = MIN_FOLLOW_DISTANCE * MIN_FOLLOW_DISTANCE;
@@ -84,7 +84,7 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
       // Include PLAYER_GROUP in collision mask to detect player presence
       collisionFilterMask: GROUND_GROUP | WALL_GROUP | PLAYER_GROUP,
       fixedRotation: true,
-      linearDamping: 0.2, // Reduced damping for smoother movement
+      linearDamping: 0.5, // Increased damping for slower movement
     });
 
     // Keep collisionResponse true for proper physics with the environment
@@ -244,7 +244,7 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
       }
 
       // Move towards target player if not too close
-      if (distanceSq > MIN_FOLLOW_DISTANCE_SQ && currentTime - lastMoveTime.current > 16) {
+      if (distanceSq > MIN_FOLLOW_DISTANCE_SQ && currentTime - lastMoveTime.current > 50) {
         // Calculate direction vector from NPC to player (reuse _direction)
         _direction.subVectors(targetPlayerPosition.current, _physicsPosition).normalize();
 
@@ -254,12 +254,12 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
           z: _direction.z * MOVEMENT_SPEED,
         };
 
-        // Blend current velocity with target for smooth control
-        body.velocity.x = body.velocity.x * 0.5 + targetVelocity.x * 0.5;
-        body.velocity.z = body.velocity.z * 0.5 + targetVelocity.z * 0.5;
+        // Blend current velocity with target for smooth control - more biased toward current velocity for slower changes
+        body.velocity.x = body.velocity.x * 0.8 + targetVelocity.x * 0.2;
+        body.velocity.z = body.velocity.z * 0.8 + targetVelocity.z * 0.2;
 
-        // Add impulse for immediate movement
-        _cannonForce.set(_direction.x * 20, 0, _direction.z * 20);
+        // Add impulse for immediate movement - reduced for slower acceleration
+        _cannonForce.set(_direction.x * 10, 0, _direction.z * 10);
         body.applyImpulse(_cannonForce, body.position);
 
         // Ensure Y velocity isn't causing the NPC to fly
@@ -269,9 +269,9 @@ export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCPro
 
         // Cap maximum velocity for stability
         const speedSq = body.velocity.x * body.velocity.x + body.velocity.z * body.velocity.z;
-        if (speedSq > 400) {
-          // 20^2
-          const scale = 20 / Math.sqrt(speedSq);
+        if (speedSq > 100) {
+          // 10^2 - reduced max speed
+          const scale = 10 / Math.sqrt(speedSq);
           body.velocity.x *= scale;
           body.velocity.z *= scale;
         }
