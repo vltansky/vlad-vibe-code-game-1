@@ -18,6 +18,8 @@ export type PeerManagerEvents = {
   roomLeft: () => void;
   clientConnected: () => void;
   clientDisconnected: () => void;
+  clientReconnecting: (attempt: number) => void;
+  clientReconnectFailed: () => void;
 };
 
 export class PeerManager {
@@ -57,6 +59,16 @@ export class PeerManager {
 
       // Close all peer connections
       this.closeAllPeers();
+    });
+
+    this.signalingClient.on('reconnecting', (attempt) => {
+      if (this.debug) console.log(`Reconnecting to signaling server, attempt ${attempt}`);
+      this.listeners.clientReconnecting?.(attempt);
+    });
+
+    this.signalingClient.on('reconnect_failed', () => {
+      if (this.debug) console.log('Reconnection to signaling server failed');
+      this.listeners.clientReconnectFailed?.();
     });
 
     // Handle room events

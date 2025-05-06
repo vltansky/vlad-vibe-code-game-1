@@ -73,6 +73,9 @@ export class GameNetworkManager {
   private mode: NetworkMode;
   private roomId: string | null = null;
   private isHost = false;
+  private reconnectTimeout: number | null = null;
+  private isReconnecting = false;
+  private disconnectTime: number | null = null;
 
   constructor(
     signalServerUrl: string = 'http://0.0.0.0:8080',
@@ -85,6 +88,14 @@ export class GameNetworkManager {
     this.signalClient.on('connect', () => {
       console.log('Connected to signaling server');
       this.localPlayerId = this.signalClient.id;
+      this.isReconnecting = false;
+      this.disconnectTime = null;
+
+      // If we reconnected and had a previous room, automatically rejoin
+      if (this.roomId) {
+        console.log(`Automatically rejoining room ${this.roomId} after reconnection`);
+        this.signalClient.joinRoom(this.roomId);
+      }
 
       if (this.mode !== NetworkMode.SIGNALING_ONLY) {
         this.setupPeerClient();
@@ -95,7 +106,27 @@ export class GameNetworkManager {
 
     this.signalClient.on('disconnect', () => {
       console.log('Disconnected from signaling server');
+      this.disconnectTime = Date.now();
       this.listeners.disconnected?.();
+
+      // Start reconnection attempts if not already reconnecting
+      if (!this.isReconnecting) {
+        this.attemptReconnect();
+      }
+    });
+
+    this.signalClient.on('reconnecting', (attempt) => {
+      console.log(`Reconnecting to signaling server, attempt ${attempt}`);
+      this.isReconnecting = true;
+    });
+
+    this.signalClient.on('reconnect_failed', () => {
+      console.log('Failed to reconnect to signaling server, will retry with custom strategy');
+
+      // If the built-in reconnection failed, we'll try our own delayed reconnection
+      if (!this.isReconnecting) {
+        this.attemptReconnect();
+      }
     });
 
     this.signalClient.on('user_joined', (data: UserEvent) => {
@@ -201,11 +232,23 @@ export class GameNetworkManager {
 
   // Connect to the network
   connect(): void {
+    this.isReconnecting = false;
+    if (this.reconnectTimeout !== null) {
+      window.clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     this.signalClient.connect();
   }
 
   // Disconnect from the network
   disconnect(): void {
+    if (this.reconnectTimeout !== null) {
+      window.clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    this.isReconnecting = false;
+
     if (this.peerClient) {
       this.peerClient.destroy();
       this.peerClient = null;
@@ -564,5 +607,61 @@ export class GameNetworkManager {
   // Set host status
   setAsHost(isHost: boolean): void {
     this.isHost = isHost;
+  }
+
+  private attemptReconnect(): void {
+    // Prevent multiple reconnection attempts
+    if (this.isReconnecting) return;
+
+    this.isReconnecting = true;
+
+    // Clear any existing timeout
+    if (this.reconnectTimeout !== null) {
+      window.clearTimeout(this.reconnectTimeout);
+    }
+
+    // Calculate delay based on how long we've been disconnected
+    let delay = 2000; // Start with 2 seconds
+
+    if (this.disconnectTime) {
+      const disconnectDuration = Date.now() - this.disconnectTime;
+
+      // Gradually increase delay up to 30 seconds for longer disconnections
+      if (disconnectDuration > 60000) {
+        // > 1 minute
+        delay = 30000; // 30 seconds
+      } else if (disconnectDuration > 30000) {
+        // > 30 seconds
+        delay = 15000; // 15 seconds
+      } else if (disconnectDuration > 10000) {
+        // > 10 seconds
+        delay = 5000; // 5 seconds
+      }
+    }
+
+    console.log(`Will attempt to reconnect in ${delay}ms`);
+
+    this.reconnectTimeout = window.setTimeout(() => {
+      console.log('Attempting to reconnect to signaling server...');
+
+      // Recreate the signal client if we've been disconnected too long
+      if (this.disconnectTime && Date.now() - this.disconnectTime > 60000) {
+        console.log('Long disconnection detected, recreating signaling client');
+        this.disconnect();
+        this.connect();
+      } else {
+        // Just attempt to reconnect
+        this.signalClient.connect();
+      }
+
+      // Set a flag to try again if this fails
+      this.reconnectTimeout = window.setTimeout(() => {
+        if (!this.signalClient.isConnected) {
+          console.log('Reconnection attempt failed, will try again');
+          this.isReconnecting = false;
+          this.attemptReconnect();
+        }
+      }, delay);
+    }, delay);
   }
 }

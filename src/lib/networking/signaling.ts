@@ -29,6 +29,8 @@ export type ErrorMessage = {
 export type SignalingEvents = {
   connect: () => void;
   disconnect: () => void;
+  reconnecting: (attempt: number) => void;
+  reconnect_failed: () => void;
   user_joined: (data: UserEvent) => void;
   user_left: (data: UserEvent) => void;
   user_disconnected: (data: UserEvent) => void;
@@ -39,8 +41,15 @@ export type SignalingEvents = {
 };
 
 export class SignalingClient {
-  private socket: Socket;
+  private socket!: Socket; // Using definite assignment assertion
   private listeners: Partial<SignalingEvents> = {};
+  private reconnectTimer: number | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 15; // Increased from 5 to 15
+  private reconnectDelay = 1000;
+  private currentRoom: string | null = null;
+  private isReconnecting = false;
+  private serverUrl: string;
 
   constructor(serverUrl?: string) {
     // Check if we should use local server based on URL query parameter
@@ -66,24 +75,63 @@ export class SignalingClient {
       }
     }
 
-    this.socket = io(finalServerUrl, {
+    this.serverUrl = finalServerUrl;
+
+    this.initializeSocket();
+  }
+
+  private initializeSocket(): void {
+    this.socket = io(this.serverUrl, {
       autoConnect: false,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: this.maxReconnectAttempts,
+      reconnectionDelay: this.reconnectDelay,
       // Explicitly set transports to ensure we try WebSocket first
       transports: ['websocket', 'polling'],
+      timeout: 20000, // Increase timeout to 20 seconds
     });
 
     // Set up default listeners
     this.socket.on('connect', () => {
       console.log('Connected to signaling server');
+      this.reconnectAttempts = 0;
+      this.isReconnecting = false;
+
+      // Clear any pending reconnect timers
+      if (this.reconnectTimer !== null) {
+        window.clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+
+      // If we were in a room before, rejoin it
+      if (this.currentRoom) {
+        this.joinRoom(this.currentRoom);
+      }
+
       this.listeners.connect?.();
     });
 
     this.socket.on('disconnect', () => {
       console.log('Disconnected from signaling server');
       this.listeners.disconnect?.();
+
+      // Start custom reconnection logic if not already reconnecting
+      if (!this.isReconnecting && !this.socket.connected) {
+        this.attemptReconnect();
+      }
+    });
+
+    this.socket.io.on('reconnect_attempt', (attempt) => {
+      console.log(`Reconnect attempt ${attempt}/${this.maxReconnectAttempts}`);
+      this.listeners.reconnecting?.(attempt);
+    });
+
+    this.socket.io.on('reconnect_failed', () => {
+      console.log('Socket.IO reconnection failed, switching to custom reconnect strategy');
+      this.listeners.reconnect_failed?.();
+
+      // Start custom reconnection strategy
+      this.attemptReconnect();
     });
 
     this.socket.on('user_joined', (data: UserEvent) => {
@@ -118,36 +166,90 @@ export class SignalingClient {
       console.error(`Signaling error: ${data.message}`);
       this.listeners.error?.(data);
     });
+
+    // Handle connection errors
+    this.socket.io.on('error', (error) => {
+      console.error('Socket.IO connection error:', error);
+    });
+  }
+
+  private attemptReconnect(): void {
+    // Prevent multiple reconnection attempts
+    if (this.isReconnecting) return;
+
+    this.isReconnecting = true;
+    this.reconnectAttempts++;
+
+    console.log(`Custom reconnect attempt ${this.reconnectAttempts}`);
+
+    // If we've exceeded our max attempts, try a different strategy
+    if (this.reconnectAttempts > this.maxReconnectAttempts) {
+      console.log('Maximum reconnection attempts reached, recreating socket');
+      this.socket.disconnect();
+      this.initializeSocket();
+      this.connect();
+      return;
+    }
+
+    // Exponential backoff for reconnect delay (1s, 2s, 4s, etc., max 30s)
+    const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), 30000);
+
+    // Schedule reconnect attempt
+    this.reconnectTimer = window.setTimeout(() => {
+      if (!this.socket.connected) {
+        console.log(`Attempting to reconnect after ${delay}ms`);
+        this.socket.connect();
+      }
+      this.isReconnecting = false;
+    }, delay);
   }
 
   // Connect to the signaling server
   connect(): void {
+    this.reconnectAttempts = 0;
+    this.isReconnecting = false;
     this.socket.connect();
   }
 
   // Disconnect from the signaling server
   disconnect(): void {
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.isReconnecting = false;
+    this.currentRoom = null;
     this.socket.disconnect();
   }
 
   // Join a room
   joinRoom(roomId: string): void {
-    this.socket.emit('join_room', { roomId });
+    this.currentRoom = roomId;
+    if (this.socket.connected) {
+      this.socket.emit('join_room', { roomId });
+    }
   }
 
   // Leave the current room
   leaveRoom(roomId?: string): void {
-    this.socket.emit('leave_room', roomId ? { roomId } : {});
+    this.currentRoom = null;
+    if (this.socket.connected) {
+      this.socket.emit('leave_room', roomId ? { roomId } : {});
+    }
   }
 
   // Send a signal to another peer
   sendSignal(targetId: string, signal: unknown): void {
-    this.socket.emit('signal', { targetId, signal });
+    if (this.socket.connected) {
+      this.socket.emit('signal', { targetId, signal });
+    }
   }
 
   // Broadcast data to all peers in the room
   broadcast(data: unknown): void {
-    this.socket.emit('broadcast', { data });
+    if (this.socket.connected) {
+      this.socket.emit('broadcast', { data });
+    }
   }
 
   // Register event listeners

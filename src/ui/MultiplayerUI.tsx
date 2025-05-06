@@ -17,11 +17,13 @@ export function MultiplayerUI() {
   const [showGameRules, setShowGameRules] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [reconnectDots, setReconnectDots] = useState('');
 
   const { isMobile } = useDeviceDetect();
 
   const isConnected = useGameStore((state) => state.isConnected);
   const isConnecting = useGameStore((state) => state.isConnecting);
+  const isReconnecting = useGameStore((state) => state.isReconnecting);
   const connectionError = useGameStore((state) => state.connectionError);
   const playerCount = useGameStore((state) => state.playerCount);
   const connect = useGameStore((state) => state.connect);
@@ -30,6 +32,20 @@ export function MultiplayerUI() {
     const localPlayerId = state.localPlayerId;
     return localPlayerId ? state.players[localPlayerId]?.nickname || 'Player' : 'Player';
   });
+
+  // Animate reconnection dots
+  useEffect(() => {
+    if (isReconnecting) {
+      const interval = setInterval(() => {
+        setReconnectDots((dots) => {
+          if (dots.length >= 3) return '';
+          return dots + '.';
+        });
+      }, 500);
+      return () => clearInterval(interval);
+    }
+    return undefined;
+  }, [isReconnecting]);
 
   // Show menu by default when not connected, especially on mobile
   useEffect(() => {
@@ -138,9 +154,14 @@ export function MultiplayerUI() {
             </div>
 
             {connectionError && (
-              <div className="mb-5 flex items-center gap-2 rounded-md border border-red-700/60 bg-red-900/70 p-3 text-sm font-medium text-red-200">
+              <div
+                className={`mb-5 flex items-center gap-2 rounded-md border ${isReconnecting ? 'border-yellow-600/60 bg-yellow-900/70 text-yellow-200' : 'border-red-700/60 bg-red-900/70 text-red-200'} p-3 text-sm font-medium`}
+              >
                 <AlertCircle size={16} />
-                <span>{connectionError}</span>
+                <span>
+                  {isReconnecting ? <>Attempting to reconnect{reconnectDots}</> : connectionError}
+                </span>
+                {isReconnecting && <RefreshCw className="ml-auto h-4 w-4 animate-spin" />}
               </div>
             )}
 
@@ -186,9 +207,10 @@ export function MultiplayerUI() {
                     className="w-full rounded-md bg-yellow-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-yellow-500"
                     type="button"
                     onClick={handleRetry}
+                    disabled={isReconnecting}
                   >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Retry Connection
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isReconnecting ? 'animate-spin' : ''}`} />
+                    {isReconnecting ? 'Reconnecting...' : 'Retry Connection'}
                   </Button>
                 ) : (
                   <Button

@@ -18,6 +18,14 @@ export function MobileControls() {
   const canUseBomb = useGameStore((state) => state.canUseBomb);
   // Get the setter function from the store
   const setJoystickDelta = useGameStore((state) => state.setJoystickDelta);
+  // Get last bomb time for cooldown indicator
+  const lastBombTime = useGameStore((state) => {
+    const localPlayer = state.localPlayerId;
+    if (!localPlayer) return 0;
+    return state.players[localPlayer]?.lastBombTime || 0;
+  });
+  // Add bomb cooldown progress state
+  const [bombCooldownProgress, setBombCooldownProgress] = useState(100);
 
   const [joystick, setJoystick] = useState<JoystickState>({
     active: false,
@@ -56,6 +64,31 @@ export function MobileControls() {
       window.removeEventListener('resize', updateJoystickSize);
     };
   }, []);
+
+  // Add effect to update bomb cooldown progress
+  useEffect(() => {
+    const BOMB_COOLDOWN = 10000; // 10 seconds, matching gameStore.ts
+    let animationFrameId: number;
+
+    const updateProgress = () => {
+      const now = Date.now();
+      const timeSinceBomb = now - lastBombTime;
+      const newProgress = Math.min((timeSinceBomb / BOMB_COOLDOWN) * 100, 100);
+
+      setBombCooldownProgress(newProgress);
+
+      if (newProgress < 100) {
+        animationFrameId = requestAnimationFrame(updateProgress);
+      }
+    };
+
+    updateProgress();
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [lastBombTime]);
 
   // Updated touch handling approach
   useEffect(() => {
@@ -147,9 +180,7 @@ export function MobileControls() {
   }, [joystick.active, joystick.origin, joystick.touchId, setJoystickDelta]);
 
   // Handle jump button (keep this, but use correct physics import if needed)
-  const handleJump = (e: React.TouchEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleJump = () => {
     if (jumpCooldown.current || !localPlayerId) return;
     jumpCooldown.current = true;
 
@@ -171,9 +202,7 @@ export function MobileControls() {
   // useEffect(() => { ... animation loop setup ... }, []);
 
   // Handler for bomb ability (keep this)
-  const handleBombAbility = (e: React.TouchEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleBombAbility = () => {
     if (canUseBomb()) {
       useGameStore.getState().useBombAbility();
     }
@@ -183,6 +212,12 @@ export function MobileControls() {
   const buttonSize = Math.min(Math.max(window.innerWidth * 0.12, 48), 64);
   const joystickSize = Math.min(Math.max(window.innerWidth * 0.15, 60), 80);
   const joystickInnerSize = joystickSize * 0.6;
+
+  // Calculate the stroke dasharray and dashoffset for the circle progress
+  const isReady = canUseBomb();
+  const circleRadius = buttonSize / 2 - 3; // Slightly smaller than the button
+  const circumference = 2 * Math.PI * circleRadius;
+  const dashOffset = circumference * (1 - bombCooldownProgress / 100);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
@@ -248,40 +283,100 @@ export function MobileControls() {
         </div>
 
         {/* Action buttons (right side) - Keep this structure */}
-        <div className="flex flex-col items-end justify-end gap-3">
+        <div className="pointer-events-auto relative flex items-end justify-end">
           {/* Jump button */}
-          <button
-            onTouchStart={handleJump}
-            className="pointer-events-auto flex items-center justify-center rounded-full bg-yellow-600/80 shadow-lg"
+          <div
+            className="absolute right-20 bottom-4 flex cursor-pointer items-center justify-center rounded-full border border-gray-500/50 bg-gray-800/60 shadow-md select-none hover:bg-gray-700/70 active:scale-95 active:bg-gray-600/70"
+            style={{
+              width: `${buttonSize}px`,
+              height: `${buttonSize}px`,
+              touchAction: 'none', // Add this to help with touch events
+            }}
+            ref={(el) => {
+              // Add the event listener with passive: false directly on the element
+              if (el) {
+                const jumpHandler = (e: TouchEvent) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleJump();
+                };
+
+                el.addEventListener('touchstart', jumpHandler, { passive: false });
+
+                // Clean up for React
+                return () => {
+                  el.removeEventListener('touchstart', jumpHandler);
+                };
+              }
+            }}
+          >
+            <ArrowUpIcon className="text-white" size={Math.floor(buttonSize * 0.5)} />
+          </div>
+
+          {/* Bomb ability button with circular progress indicator */}
+          <div
+            className="absolute right-4 bottom-4 flex cursor-pointer items-center justify-center rounded-full border border-gray-500/50 bg-gray-800/60 shadow-md select-none hover:bg-gray-700/70 active:scale-95 active:bg-gray-600/70"
             style={{
               width: `${buttonSize}px`,
               height: `${buttonSize}px`,
               touchAction: 'none',
+              position: 'relative',
             }}
-            disabled={jumpCooldown.current}
-          >
-            <ArrowUpIcon className="text-white" size={Math.floor(buttonSize * 0.5)} />
-          </button>
+            ref={(el) => {
+              // Add the event listener with passive: false directly on the element
+              if (el) {
+                const bombHandler = (e: TouchEvent) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleBombAbility();
+                };
 
-          {/* Abilities row */}
-          <div className="flex gap-3">
-            {/* Bomb ability */}
-            <button
-              onTouchStart={handleBombAbility}
-              className={`pointer-events-auto flex items-center justify-center rounded-full shadow-lg ${canUseBomb() ? 'bg-red-600/80' : 'bg-red-900/40'}`}
+                el.addEventListener('touchstart', bombHandler, { passive: false });
+
+                // Clean up for React
+                return () => {
+                  el.removeEventListener('touchstart', bombHandler);
+                };
+              }
+            }}
+          >
+            {/* Circular progress indicator */}
+            <svg
+              width={buttonSize}
+              height={buttonSize}
+              viewBox={`0 0 ${buttonSize} ${buttonSize}`}
               style={{
-                width: `${buttonSize * 0.75}px`,
-                height: `${buttonSize * 0.75}px`,
-                touchAction: 'none',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                transform: 'rotate(-90deg)',
               }}
             >
-              <span
-                className={`text-center font-bold ${canUseBomb() ? 'text-white' : 'text-gray-400'}`}
-                style={{ fontSize: `${buttonSize * 0.35}px` }}
-              >
-                B
-              </span>
-            </button>
+              <circle
+                cx={buttonSize / 2}
+                cy={buttonSize / 2}
+                r={circleRadius}
+                fill="none"
+                stroke={isReady ? 'rgba(34, 197, 94, 0.7)' : 'rgba(249, 115, 22, 0.7)'}
+                strokeWidth="2"
+                strokeDasharray={circumference}
+                strokeDashoffset={dashOffset}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span
+              className={`text-center font-bold ${isReady ? 'text-white' : 'text-gray-400'}`}
+              style={{ fontSize: `${buttonSize * 0.35}px`, position: 'relative', zIndex: 1 }}
+            >
+              B
+            </span>
+            {/* Optional: Ready indicator */}
+            {isReady && (
+              <div
+                className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-green-500"
+                style={{ boxShadow: '0 0 5px rgba(34, 197, 94, 0.7)' }}
+              ></div>
+            )}
           </div>
         </div>
       </div>

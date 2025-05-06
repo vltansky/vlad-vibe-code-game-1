@@ -71,6 +71,52 @@ yarn dev
 yarn build
 ```
 
+## 🔄 Multiplayer Server with Redis
+
+The project includes a WebRTC signaling server with Redis for session management and horizontal scaling.
+
+### Setting Up Redis Connection
+
+The server can use Redis to manage session state across multiple server instances. This enables features like:
+
+- Persistent rooms across server restarts
+- Load balancing across multiple server instances
+- Real-time synchronization of user states
+
+#### Redis Connection Configuration
+
+1. **Local Development**:
+
+   ```bash
+   # Run Redis locally with Docker
+   docker run -d --name redis-server -p 6379:6379 redis
+
+   # Configure .env in server directory
+   REDIS_URL=redis://localhost:6379
+   ```
+
+2. **Hosted Service (Railway.app)**:
+
+   - Create a Redis service in Railway
+   - Access the connection details in the Variables tab
+   - Use the `REDIS_URL` environment variable format:
+
+   ```
+   REDIS_URL=redis://username:password@host:port
+   ```
+
+3. **Authentication**:
+
+   - If your Redis instance requires authentication (most hosted services do), use:
+
+   ```
+   REDIS_URL=redis://default:yourpassword@host:port
+   ```
+
+4. **Verification**:
+   - Check server logs for "Connected to Redis server" (success)
+   - If connection fails, the server will automatically fall back to in-memory storage
+
 ### Code Formatting
 
 The project uses Prettier for consistent code formatting. Formatting will automatically be applied when you save files if you're using VSCode with the recommended extensions.

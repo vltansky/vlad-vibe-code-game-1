@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Player } from './Player';
 import { GameMap } from './GameMap';
@@ -68,6 +68,17 @@ export function GameObjects() {
     }
   }, [isConnected]);
 
+  // Add NPC bomb handler
+  const handleNPCBomb = useCallback((position: Vector3, npcId: string) => {
+    setBombEffects((prev) => [
+      ...prev,
+      {
+        id: `bomb-${npcId}-${Date.now()}`,
+        position: position.clone(),
+      },
+    ]);
+  }, []);
+
   // Helper function to get a random corner position (same as in gameStore.ts)
   function getRandomCornerPosition(): Vector3 {
     // Map boundaries from mapPhysics.ts (MAP_SIZE = 30)
@@ -133,7 +144,13 @@ export function GameObjects() {
 
       {/* Render all NPCs */}
       {npcs.map((npc) => (
-        <NPC key={npc.id} id={npc.id} position={npc.position} nickname={npc.nickname} />
+        <NPC
+          key={npc.id}
+          id={npc.id}
+          position={npc.position}
+          nickname={npc.nickname}
+          onBombUsed={handleNPCBomb}
+        />
       ))}
 
       {/* Render all bomb effects */}

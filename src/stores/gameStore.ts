@@ -34,6 +34,7 @@ export type GameState = {
   // Connection state
   isConnected: boolean;
   isConnecting: boolean;
+  isReconnecting: boolean; // Track reconnection attempts
   connectionError: string | null;
   roomId: string | null;
   playerCount: number;
@@ -154,6 +155,7 @@ export const useGameStore = create<GameState>((set, get) => {
     // Initial state
     isConnected: false,
     isConnecting: false,
+    isReconnecting: false,
     connectionError: null,
     roomId: null,
     playerCount: 0,
@@ -172,7 +174,7 @@ export const useGameStore = create<GameState>((set, get) => {
       // Don't reconnect if already connected
       if (get().isConnected || get().isConnecting) return;
 
-      set({ isConnecting: true, connectionError: null, roomId });
+      set({ isConnecting: true, connectionError: null, roomId, isReconnecting: false });
 
       // --- MODIFY: Instantiate PeerManager with ICE Servers ---
       const iceServers: RTCIceServer[] = [
@@ -266,6 +268,7 @@ export const useGameStore = create<GameState>((set, get) => {
           set({
             isConnected: true,
             isConnecting: false,
+            isReconnecting: false,
             localPlayerId,
             players,
           });
@@ -285,7 +288,24 @@ export const useGameStore = create<GameState>((set, get) => {
         set({
           isConnected: false,
           isConnecting: false,
+          isReconnecting: true,
           connectionError: 'Disconnected from signaling server',
+        });
+      });
+
+      peerManager.on('clientReconnecting', (attempt) => {
+        console.log(`Reconnection attempt ${attempt}`);
+        set({
+          isReconnecting: true,
+          connectionError: 'Disconnected from signaling server',
+        });
+      });
+
+      peerManager.on('clientReconnectFailed', () => {
+        console.log('Reconnection failed, will try again with fallback strategy');
+        set({
+          isReconnecting: true,
+          connectionError: 'Connection issues, attempting fallback reconnection...',
         });
       });
 
@@ -603,6 +623,7 @@ export const useGameStore = create<GameState>((set, get) => {
       set({
         isConnected: false,
         isConnecting: false,
+        isReconnecting: false,
         roomId: null,
         localPlayerId: null,
         players: {},

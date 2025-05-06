@@ -7,7 +7,7 @@ import { applyBombEffect } from '@/systems/physics';
 import * as CANNON from 'cannon-es';
 
 // Import constants and world getter
-import { getPhysicsWorld, getPlayerMaterial, getCollisionMask } from '@/systems/physics';
+import { getPhysicsWorld, getPlayerMaterial } from '@/systems/physics';
 
 // Time in ms between NPC bomb attacks
 const ATTACK_COOLDOWN = 8000; // 8 seconds
@@ -25,6 +25,15 @@ const MIN_FOLLOW_DISTANCE_SQ = MIN_FOLLOW_DISTANCE * MIN_FOLLOW_DISTANCE;
 
 // NPC-specific collision group
 const NPC_GROUP = 16;
+// For collision filtering
+const PLAYER_GROUP = 1;
+const GROUND_GROUP = 2;
+const WALL_GROUP = 8;
+
+// Bomb effect constants
+const BOMB_RADIUS = 5; // Should match the same value in applyBombEffect
+const BOMB_FORCE = 35; // Should match the same value in applyBombEffect
+const UPWARD_BIAS = 0.3; // Should match the same value in applyBombEffect
 
 // Reusable objects to avoid garbage collection
 const _tempVec3 = new Vector3();
@@ -32,14 +41,16 @@ const _direction = new Vector3();
 const _physicsPosition = new Vector3();
 const _cannonForce = new CANNON.Vec3();
 const _cannonPoint = new CANNON.Vec3();
+const _distVector = new Vector3();
 
 type NPCProps = {
   position: Vector3;
   id: string;
   nickname?: string;
+  onBombUsed?: (position: Vector3, npcId: string) => void;
 };
 
-export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
+export function NPC({ position, id, nickname = 'Enemy NPC', onBombUsed }: NPCProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<Group>(null);
   const nicknameGroupRef = useRef<Group>(null);
@@ -70,10 +81,26 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
       position: new CANNON.Vec3(position.x, position.y, position.z),
       material: playerMaterial,
       collisionFilterGroup: NPC_GROUP,
-      collisionFilterMask: getCollisionMask('npc'),
+      // Only collide with ground and walls, not with players
+      collisionFilterMask: GROUND_GROUP | WALL_GROUP,
       fixedRotation: true,
       linearDamping: 0.3, // Reduced damping for faster movement
     });
+
+    // Keep collisionResponse true for proper physics with the environment
+    sphereBody.collisionResponse = true;
+
+    // Create a special shape just for detecting player proximity without physical interaction
+    const sensorShape = new CANNON.Sphere(0.5);
+    sphereBody.addShape(sensorShape);
+
+    // The second shape is only for sensing players
+    sphereBody.shapes[1].collisionFilterGroup = NPC_GROUP;
+    sphereBody.shapes[1].collisionFilterMask = PLAYER_GROUP;
+
+    // This is the key - disable collision response just for this shape
+    // @ts-expect-error - Cannon-es types don't expose shapeCollisionResponse
+    sphereBody.shapeCollisionResponse = [true, false];
 
     npcPhysicsBody.current = sphereBody;
     world.addBody(sphereBody);
@@ -84,6 +111,71 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
       }
     };
   }, [id, position]);
+
+  // Listen for player bomb events and react when within range
+  useEffect(() => {
+    // Unsubscribe from previous store
+    const unsubscribe = useGameStore.subscribe((state, prevState) => {
+      // Check if a player used a bomb by comparing lastBombTime
+      Object.values(state.players).forEach((player) => {
+        const prevPlayer = prevState.players[player.id];
+        if (prevPlayer && player.lastBombTime > prevPlayer.lastBombTime) {
+          // Player used a bomb, check if NPC is within range
+          const body = npcPhysicsBody.current;
+          if (!body) return;
+
+          // Get NPC position
+          _physicsPosition.set(body.position.x, body.position.y, body.position.z);
+
+          // Get bomb position (player position)
+          const bombPosition = player.position;
+
+          // Calculate distance from bomb
+          _distVector.subVectors(_physicsPosition, bombPosition);
+          const distance = _distVector.length();
+
+          // If within bomb radius, apply impulse
+          if (distance <= BOMB_RADIUS) {
+            // Calculate force magnitude with falloff
+            const forceMagnitude = BOMB_FORCE * Math.sqrt(1 - distance / BOMB_RADIUS);
+
+            // Calculate force direction
+            let forceDirection;
+            if (distance < 0.1) {
+              // If very close, use random direction with upward bias
+              forceDirection = new Vector3(
+                Math.random() * 2 - 1,
+                Math.random() * 0.5 + 0.5,
+                Math.random() * 2 - 1
+              ).normalize();
+            } else {
+              // Direction away from explosion
+              forceDirection = _distVector.clone().normalize();
+            }
+
+            // Add upward bias
+            forceDirection.y += UPWARD_BIAS;
+
+            // Normalize again
+            forceDirection.normalize().multiplyScalar(forceMagnitude);
+
+            // Apply impulse to NPC body
+            body.applyImpulse(
+              new CANNON.Vec3(forceDirection.x, forceDirection.y, forceDirection.z),
+              body.position
+            );
+
+            console.log(
+              `[NPC] ${id} hit by bomb from player ${player.id}, applying impulse:`,
+              forceDirection
+            );
+          }
+        }
+      });
+    });
+
+    return () => unsubscribe();
+  }, [id]);
 
   // Update visuals and AI behavior
   useFrame(() => {
@@ -147,6 +239,11 @@ export function NPC({ position, id, nickname = 'Enemy NPC' }: NPCProps) {
       ) {
         applyBombEffect(_physicsPosition, id);
         lastAttackTime.current = currentTime;
+
+        // Call the callback to create visual effect
+        if (onBombUsed) {
+          onBombUsed(_physicsPosition, id);
+        }
       }
 
       // Move towards target player if not too close
