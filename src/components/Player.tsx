@@ -1,8 +1,33 @@
-import { useRef } from 'react';
+import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Vector3, Quaternion, Group } from 'three';
 import { PlayerState } from '@/stores/gameStore';
 import { Billboard, Text } from '@react-three/drei';
+
+// Define available skins
+export type SkinData = {
+  name: string;
+  material: 'standard' | 'phong' | 'normal' | 'toon';
+  color?: string;
+  emissive?: string;
+  wireframe?: boolean;
+  roughness?: number;
+  metalness?: number;
+};
+
+// Available player skins
+export const PLAYER_SKINS: Record<string, SkinData> = {
+  default: { name: 'Default', material: 'standard', roughness: 0.7, metalness: 0 },
+  metal: { name: 'Metal', material: 'standard', metalness: 0.9, roughness: 0.2 },
+  glow: { name: 'Glow', material: 'standard', emissive: '#ff4400', roughness: 1, metalness: 0 },
+  wireframe: {
+    name: 'Wireframe',
+    material: 'standard',
+    wireframe: true,
+    roughness: 0.5,
+    metalness: 0,
+  },
+};
 
 type PlayerProps = {
   player: PlayerState;
@@ -13,6 +38,11 @@ export function Player({ player, isLocal }: PlayerProps) {
   const meshRef = useRef<Mesh>(null);
   const groupRef = useRef<Group>(null);
   const nicknameGroupRef = useRef<Group>(null);
+
+  // Prepare skin-specific material properties
+  const skinData = useMemo(() => {
+    return PLAYER_SKINS[player.skin] || PLAYER_SKINS.default;
+  }, [player.skin]);
 
   // Update visual position from player state
   useFrame(() => {
@@ -42,7 +72,13 @@ export function Player({ player, isLocal }: PlayerProps) {
       {/* Player Ball */}
       <mesh ref={meshRef} position={player.position.toArray()} castShadow receiveShadow>
         <sphereGeometry args={[0.5, 32, 32]} />
-        <meshStandardMaterial color={player.color} />
+        <meshStandardMaterial
+          color={player.color}
+          emissive={skinData.emissive || '#000000'}
+          wireframe={skinData.wireframe || false}
+          roughness={skinData.roughness !== undefined ? skinData.roughness : 0.7}
+          metalness={skinData.metalness !== undefined ? skinData.metalness : 0}
+        />
       </mesh>
 
       {/* Player Nickname - Fixed position above the ball */}

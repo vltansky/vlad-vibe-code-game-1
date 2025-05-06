@@ -3,15 +3,10 @@ import { PeerManager } from '@/lib/networking/peerManager';
 import { PeerData } from '@/lib/networking/peer';
 import { Vector3, Quaternion } from 'three';
 import {
-  addPlayerBody as addPhysicsPlayerBody,
-  removePlayerBody as removePhysicsPlayerBody,
-  setPlayerBodyPosition,
-  applyPushAbilityEffect,
-  applyBombEffect,
+  // applyBombEffect, // Not directly used here
   initPhysics,
   updatePhysics,
 } from '@/systems/physics';
-import { PlayerData } from './types';
 
 // Unique identifier for a player
 export type PlayerId = string;
@@ -27,6 +22,7 @@ export type PlayerState = {
   score: number; // Track player score
   isKing: boolean; // Whether player is the current king
   lastBombTime: number; // Last time player used bomb ability
+  skin: string; // Identifier for player skin/appearance
 };
 
 // Game state
@@ -55,7 +51,7 @@ export type GameState = {
   peerManager: PeerManager | null;
 
   // Actions
-  connect: (roomId: string, nickname?: string) => void;
+  connect: (roomId: string, nickname?: string, color?: string, skin?: string) => void;
   disconnect: () => void;
   updateLocalPlayerPosition: (position: Vector3) => void;
   updateLocalPlayerRotation: (rotation: Quaternion) => void;
@@ -78,6 +74,9 @@ export type GameState = {
   // Physics related
   initPhysics: () => Promise<void>;
   updatePhysics: (delta: number) => void;
+
+  // New action to change player skin
+  changeSkin: (skinId: string) => void;
 };
 
 // Constants
@@ -129,7 +128,12 @@ export const useGameStore = create<GameState>((set, get) => {
       updatedState.nickname = partialState.nickname;
       changed = true;
     }
-    // Add checks for other fields like color, isHost if they can change dynamically
+
+    // Check skin change
+    if (partialState.skin && currentState.skin !== partialState.skin) {
+      updatedState.skin = partialState.skin;
+      changed = true;
+    }
 
     // Only update and broadcast if something actually changed
     if (changed) {
@@ -143,6 +147,7 @@ export const useGameStore = create<GameState>((set, get) => {
       if (partialState.nickname) broadcastPayload.nickname = updatedState.nickname;
       if (partialState.score !== undefined) broadcastPayload.score = updatedState.score;
       if (partialState.isKing !== undefined) broadcastPayload.isKing = updatedState.isKing;
+      if (partialState.skin) broadcastPayload.skin = updatedState.skin;
 
       peerManager.broadcast('player_state_update', broadcastPayload);
     }
@@ -170,7 +175,7 @@ export const useGameStore = create<GameState>((set, get) => {
     gameWinner: null,
 
     // Connect to a room
-    connect: (roomId: string, nickname: string = 'Player') => {
+    connect: (roomId: string, nickname: string = 'Player', color?: string, skin?: string) => {
       // Don't reconnect if already connected
       if (get().isConnected || get().isConnecting) return;
 
@@ -248,12 +253,13 @@ export const useGameStore = create<GameState>((set, get) => {
             id: localPlayerId,
             position: getRandomCornerPosition(), // Spawn in a random corner instead of center
             rotation: new Quaternion(),
-            color: getRandomColor(),
+            color: color || getRandomColor(), // Use provided color or generate random
             isHost: false, // Will be set to true if first in room
             nickname: nickname,
             score: 0, // Initial score is 0
             isKing: false, // Not king by default
             lastBombTime: 0, // Never used bomb initially
+            skin: skin || 'default', // Use provided skin or default
           };
 
           // *** Call createPlayerBody AFTER setting initial state ***
@@ -410,6 +416,7 @@ export const useGameStore = create<GameState>((set, get) => {
             score: playerState.score || 0,
             isKing: playerState.isKing || false,
             lastBombTime: playerState.lastBombTime || 0,
+            skin: playerState.skin || 'default',
           };
 
           console.log('[GameStore] Adding player state:', peerId, updatedPlayers[peerId]);
@@ -489,6 +496,10 @@ export const useGameStore = create<GameState>((set, get) => {
 
               if (partialUpdate.nickname !== undefined) {
                 updatedPlayerState.nickname = partialUpdate.nickname;
+              }
+
+              if (partialUpdate.skin && currentPlayerState.skin !== partialUpdate.skin) {
+                updatedPlayerState.skin = partialUpdate.skin;
               }
 
               const updatedPlayers = { ...players, [targetPlayerId]: updatedPlayerState };
@@ -874,6 +885,14 @@ export const useGameStore = create<GameState>((set, get) => {
     },
     updatePhysics: (delta) => {
       updatePhysics(delta);
+    },
+
+    // New action to change player skin
+    changeSkin: (skinId: string) => {
+      const { localPlayerId } = get();
+      if (localPlayerId) {
+        updateAndBroadcastPlayerState({ skin: skinId });
+      }
     },
   };
 });

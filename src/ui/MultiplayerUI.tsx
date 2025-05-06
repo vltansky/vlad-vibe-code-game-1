@@ -6,13 +6,19 @@ import { Users, Gamepad2, AlertCircle, BookOpen, RefreshCw, Menu, X, Trophy } fr
 import { BombCooldownBar } from './BombCooldownBar';
 import { useDeviceDetect } from '@/hooks/useDeviceDetect';
 import { Scoreboard } from './Scoreboard';
+import { PLAYER_SKINS } from '@/components/Player';
+import { PlayerPreview } from './PlayerPreview';
 
 // Use a fixed room code for all users
 const DEFAULT_ROOM = 'MAIN';
 const NICKNAME_STORAGE_KEY = 'player-nickname';
+const PLAYER_COLOR_STORAGE_KEY = 'player-color';
+const PLAYER_SKIN_STORAGE_KEY = 'player-skin';
 
 export function MultiplayerUI() {
   const [nickname, setNickname] = useState('');
+  const [playerColor, setPlayerColor] = useState('#FF5733'); // Default orange-red color
+  const [playerSkin, setPlayerSkin] = useState('default');
   const [showControls, setShowControls] = useState(false);
   const [showGameRules, setShowGameRules] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -54,11 +60,21 @@ export function MultiplayerUI() {
     }
   }, [isConnected]);
 
-  // Load nickname from localStorage on mount
+  // Load saved preferences from localStorage on mount
   useEffect(() => {
     const savedNickname = localStorage.getItem(NICKNAME_STORAGE_KEY);
     if (savedNickname) {
       setNickname(savedNickname);
+    }
+
+    const savedColor = localStorage.getItem(PLAYER_COLOR_STORAGE_KEY);
+    if (savedColor) {
+      setPlayerColor(savedColor);
+    }
+
+    const savedSkin = localStorage.getItem(PLAYER_SKIN_STORAGE_KEY);
+    if (savedSkin) {
+      setPlayerSkin(savedSkin);
     }
   }, []);
 
@@ -66,10 +82,13 @@ export function MultiplayerUI() {
     if (e) e.preventDefault();
     const userNickname = nickname.trim() || 'Player';
 
-    // Save nickname to localStorage
+    // Save preferences to localStorage
     localStorage.setItem(NICKNAME_STORAGE_KEY, userNickname);
+    localStorage.setItem(PLAYER_COLOR_STORAGE_KEY, playerColor);
+    localStorage.setItem(PLAYER_SKIN_STORAGE_KEY, playerSkin);
 
-    connect(DEFAULT_ROOM, userNickname);
+    // Connect with the customized options
+    connect(DEFAULT_ROOM, userNickname, playerColor, playerSkin);
 
     // Auto-hide menu on mobile after connecting
     if (isMobile) {
@@ -79,6 +98,14 @@ export function MultiplayerUI() {
 
   const handleNicknameChange = (e: ChangeEvent<HTMLInputElement>) => {
     setNickname(e.target.value);
+  };
+
+  const handleColorChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setPlayerColor(e.target.value);
+  };
+
+  const handleSkinChange = (skinId: string) => {
+    setPlayerSkin(skinId);
   };
 
   const handleRetry = () => {
@@ -125,6 +152,9 @@ export function MultiplayerUI() {
 
   return (
     <>
+      {/* Player Preview - Show only when not connected */}
+      {!isConnected && <PlayerPreview playerColor={playerColor} playerSkinId={playerSkin} />}
+
       {/* Mobile menu toggle button */}
       {isMobile && isConnected && (
         <button
@@ -196,9 +226,43 @@ export function MultiplayerUI() {
                     value={nickname}
                     onChange={handleNicknameChange}
                     autoFocus={!isMobile} // Disable autofocus on mobile to prevent keyboard popup
-                    placeholder="Enter your nickname"
+                    placeholder="Player"
                     className="rounded-md border-gray-600 bg-gray-800/70 px-3 py-2.5 text-sm text-white shadow-inner transition-colors placeholder:text-gray-500 focus:border-blue-500 focus:bg-gray-700/80 focus:ring-1 focus:ring-blue-500"
                   />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-gray-400">Player Color</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={playerColor}
+                      onChange={handleColorChange}
+                      className="h-8 w-12 cursor-pointer appearance-none overflow-hidden rounded-md border border-gray-600 bg-transparent"
+                      style={{ backgroundColor: playerColor }} // Show selected color
+                    />
+                    <span className="text-xs text-gray-300">{playerColor.toUpperCase()}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-gray-400">Player Appearance</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(PLAYER_SKINS).map(([skinId, skinData]) => (
+                      <button
+                        key={skinId}
+                        type="button"
+                        className={`rounded-md border p-2 text-xs transition-colors ${
+                          playerSkin === skinId
+                            ? 'border-blue-500 bg-blue-900/40 text-blue-200'
+                            : 'border-gray-700 bg-gray-800/60 text-gray-300 hover:bg-gray-700/60'
+                        }`}
+                        onClick={() => handleSkinChange(skinId)}
+                      >
+                        {skinData.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {connectionError ? (
@@ -217,7 +281,7 @@ export function MultiplayerUI() {
                     variant="default"
                     className="w-full rounded-md bg-blue-600 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-500 disabled:opacity-60"
                     type="submit"
-                    disabled={isConnecting || !nickname.trim()}
+                    disabled={isConnecting}
                   >
                     {isConnecting ? 'Connecting...' : 'Join Game'}
                   </Button>
