@@ -10,12 +10,12 @@ const MAX_SUBSTEPS = 6;
 const KING_ZONE_RADIUS = 3; // Meters - radius of king zone
 
 // Collision groups
-const PLAYER_GROUP = 1;
-const GROUND_GROUP = 2;
-const TRIGGER_GROUP = 4;
-const WALL_GROUP = 8;
+export const PLAYER_GROUP = 1;
+export const GROUND_GROUP = 2;
+export const TRIGGER_GROUP = 4;
+export const WALL_GROUP = 8;
 // Use ALL_GROUPS to detect collisions with everything
-const ALL_GROUPS = -1; // -1 means all groups in cannon.js - used for non-player objects
+export const ALL_GROUPS = -1; // -1 means all groups in cannon.js - used for non-player objects
 
 // Define mask for players to collide with everything EXCEPT other players
 const PLAYER_COLLIDE_MASK = GROUND_GROUP | TRIGGER_GROUP | WALL_GROUP; // No PLAYER_GROUP

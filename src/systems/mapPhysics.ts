@@ -1,6 +1,10 @@
 import * as CANNON from 'cannon-es';
 import { Box3, Vector3 } from 'three';
 
+// Constants for collision groups (matching physics.ts)
+const WALL_GROUP = 8;
+const GROUND_GROUP = 2;
+
 // Define custom types for Cannon.js extensions
 interface CannonBodyWithUserData extends CANNON.Body {
   userData?: {
@@ -9,7 +13,7 @@ interface CannonBodyWithUserData extends CANNON.Body {
   };
 }
 
-// Define contact event interface
+// Define a type for the begin contact event
 interface BeginContactEvent {
   bodyA: CannonBodyWithUserData;
   bodyB: CannonBodyWithUserData;
@@ -120,15 +124,16 @@ function createMaterials() {
 function createGround() {
   if (!world) return;
 
-  // Main ground
   const groundShape = new CANNON.Plane();
   groundBody = new CANNON.Body({
     mass: 0,
     type: CANNON.Body.STATIC,
     material: groundMaterial,
+    collisionFilterGroup: GROUND_GROUP,
   });
+
   groundBody.addShape(groundShape);
-  groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // rotate to face up
   world.addBody(groundBody);
 
   // Ice area in center
@@ -169,6 +174,7 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(0, WALL_HEIGHT / 2, -MAP_SIZE / 2 - WALL_THICKNESS / 2),
+    collisionFilterGroup: WALL_GROUP,
   }) as CannonBodyWithUserData;
 
   northWallBody.addShape(northWallShape);
@@ -188,6 +194,7 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(0, WALL_HEIGHT / 2, MAP_SIZE / 2 + WALL_THICKNESS / 2),
+    collisionFilterGroup: WALL_GROUP,
   }) as CannonBodyWithUserData;
 
   southWallBody.addShape(southWallShape);
@@ -207,6 +214,7 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(MAP_SIZE / 2 + WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0),
+    collisionFilterGroup: WALL_GROUP,
   }) as CannonBodyWithUserData;
 
   eastWallBody.addShape(eastWallShape);
@@ -226,6 +234,7 @@ function createWalls(mapBounds: Box3) {
     type: CANNON.Body.STATIC,
     material: wallMaterial,
     position: new CANNON.Vec3(-MAP_SIZE / 2 - WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0),
+    collisionFilterGroup: WALL_GROUP,
   }) as CannonBodyWithUserData;
 
   westWallBody.addShape(westWallShape);
@@ -363,6 +372,7 @@ function createCornerBlockers() {
       material: wallMaterial,
       position: new CANNON.Vec3(corner.x, cornerHeight / 2, corner.z),
       collisionResponse: true,
+      collisionFilterGroup: WALL_GROUP,
     });
 
     cornerBody.addShape(cornerShape);
@@ -384,6 +394,7 @@ function createCeiling() {
     material: wallMaterial,
     position: new CANNON.Vec3(0, ceilingHeight, 0),
     collisionResponse: true,
+    collisionFilterGroup: WALL_GROUP,
   });
 
   ceilingBody.addShape(ceilingShape);
@@ -402,6 +413,7 @@ function createCenterPlatform() {
     type: CANNON.Body.STATIC,
     material: groundMaterial,
     position: new CANNON.Vec3(0, 0.3, 0),
+    collisionFilterGroup: GROUND_GROUP,
   });
   centerPlatformBody.addShape(platformShape);
   world.addBody(centerPlatformBody);
@@ -417,6 +429,7 @@ function createRamp() {
     type: CANNON.Body.STATIC,
     material: rampMaterial,
     position: new CANNON.Vec3(-MAP_SIZE / 4, 0.5, MAP_SIZE / 4),
+    collisionFilterGroup: GROUND_GROUP,
   });
   rampBody.addShape(rampShape);
 
@@ -444,6 +457,7 @@ function createObstacles() {
       type: CANNON.Body.STATIC,
       material: wallMaterial,
       position: new CANNON.Vec3(x, WALL_HEIGHT / 3, z),
+      collisionFilterGroup: WALL_GROUP,
     });
     obstacleBody.addShape(obstacleShape);
     world.addBody(obstacleBody);
