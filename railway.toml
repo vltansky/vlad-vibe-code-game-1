@@ -1,9 +1,10 @@
 [build]
 builder = "nixpacks"
 buildCommand = "cd server && yarn install"
+rootDirectory = "/server"
 
 [deploy]
-startCommand = "cd server && yarn start"
+startCommand = "node server.js"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"

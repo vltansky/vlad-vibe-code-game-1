@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "cd server && yarn start",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
