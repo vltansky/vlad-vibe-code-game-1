@@ -193,6 +193,35 @@ export function GameObjects() {
     updatePhysics(delta);
   });
 
+  // Add a useEffect to ensure bomb effects are cleaned up even if animation fails
+  useEffect(() => {
+    // Safety cleanup - remove any bomb effects that have been around too long
+    // This ensures bombs eventually disappear even if animation fails
+    if (bombEffects.length > 0) {
+      const BOMB_MAX_LIFETIME = 3000; // 3 seconds max lifetime for any bomb effect
+
+      // Create a cleanup timeout for each bomb
+      const timeouts = bombEffects.map((effect) => {
+        // Extract timestamp from the bomb ID if possible
+        const bombTimestamp = effect.id.includes('-')
+          ? parseInt(effect.id.split('-').pop() || '0')
+          : Date.now();
+
+        const timeElapsed = Date.now() - bombTimestamp;
+        const remainingTime = Math.max(0, BOMB_MAX_LIFETIME - timeElapsed);
+
+        return setTimeout(() => {
+          setBombEffects((prev) => prev.filter((e) => e.id !== effect.id));
+          console.log(`[GameObjects] Force removing bomb effect ${effect.id} after timeout`);
+        }, remainingTime);
+      });
+
+      return () => {
+        timeouts.forEach(clearTimeout);
+      };
+    }
+  }, [bombEffects]);
+
   // Remove completed bomb effects
   const handleBombEffectComplete = (bombId: string) => {
     setBombEffects((prev) => prev.filter((effect) => effect.id !== bombId));

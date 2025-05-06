@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from 'three';
 
@@ -13,13 +13,34 @@ export function BombEffect({ position, onComplete }: BombEffectProps) {
   const [intensity, setIntensity] = useState(1);
   const [color, setColor] = useState('#ff4500');
   const elapsedTime = useRef(0);
+  const hasCompleted = useRef(false);
 
   // Constants for animation
   const EXPLOSION_DURATION = 0.75; // Slightly increased from 0.5 to 0.75 seconds
   const MAX_SCALE = 7.5; // 1/4 of map size (MAP_SIZE = 30)
 
+  // Safety cleanup - ensure the effect is removed even if animation fails
+  useEffect(() => {
+    // Set a backup timeout slightly longer than the animation duration
+    const timeoutId = setTimeout(
+      () => {
+        if (!hasCompleted.current) {
+          console.log('[BombEffect] Safety cleanup triggered for bomb effect');
+          hasCompleted.current = true;
+          onComplete();
+        }
+      },
+      EXPLOSION_DURATION * 1000 * 1.5
+    ); // 1.5x the normal duration for safety
+
+    return () => clearTimeout(timeoutId);
+  }, [onComplete, EXPLOSION_DURATION]);
+
   // Animate the explosion
   useFrame((_, delta) => {
+    // Skip if already completed
+    if (hasCompleted.current) return;
+
     // Update time
     elapsedTime.current += delta;
     const progress = Math.min(elapsedTime.current / EXPLOSION_DURATION, 1);
@@ -34,7 +55,8 @@ export function BombEffect({ position, onComplete }: BombEffectProps) {
     setColor(`hsl(${hue * 360}, 100%, 50%)`);
 
     // When animation is complete, callback to remove from scene
-    if (progress >= 1) {
+    if (progress >= 1 && !hasCompleted.current) {
+      hasCompleted.current = true;
       onComplete();
     }
   });
