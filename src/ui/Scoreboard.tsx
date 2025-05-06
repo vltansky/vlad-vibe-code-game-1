@@ -34,6 +34,11 @@ export function Scoreboard({ inMenu = false }: ScoreboardProps) {
   // Get sorted players by score
   const sortedPlayers = Object.values(players).sort((a, b) => b.score - a.score);
 
+  // Find local player rank
+  const localPlayerRank = localPlayerId
+    ? sortedPlayers.findIndex((player) => player.id === localPlayerId) + 1
+    : 0;
+
   return (
     <>
       {/* Game winner message */}
@@ -61,7 +66,7 @@ export function Scoreboard({ inMenu = false }: ScoreboardProps) {
       {/* Scoreboard - positioned differently based on inMenu and device type */}
       <div
         className={`${
-          inMenu ? 'relative w-full' : 'absolute top-3 left-3 hidden w-64 md:block'
+          inMenu ? 'relative w-full' : 'absolute top-3 left-3 w-auto md:w-64'
         } z-10 rounded-xl ${
           inMenu ? 'bg-transparent p-0' : 'bg-gray-900/85 p-4 shadow-xl backdrop-blur-sm'
         }`}
@@ -72,34 +77,87 @@ export function Scoreboard({ inMenu = false }: ScoreboardProps) {
           </h2>
         )}
 
-        <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'space-y-3'}`}>
-          {sortedPlayers.map((player) => (
-            <div
-              key={player.id}
-              className={`flex items-center justify-between rounded-lg ${isMobile ? 'p-1.5' : 'p-2'} ${
-                player.id === localPlayerId ? 'bg-blue-800/40' : 'bg-gray-800/40'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                {player.isKing && (
-                  <span
-                    className={`flex items-center justify-center rounded-full bg-yellow-500 text-xs ${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`}
-                  >
-                    👑
+        {isMobile && !inMenu ? (
+          // Mobile view - show only 1st place and player position
+          <div className="space-y-3">
+            {/* First place player */}
+            {sortedPlayers.length > 0 && (
+              <div className="flex items-center justify-between rounded-lg bg-yellow-800/40 p-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-500 text-xs font-bold">
+                    1st
                   </span>
-                )}
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: player.color }} />
-                <span
-                  className={`${isMobile ? 'text-xs' : 'text-sm'} max-w-[80px] truncate font-medium text-white`}
-                >
-                  {player.nickname}
-                  {player.id === localPlayerId ? ' (You)' : ''}
+                  <span
+                    className="h-3 w-3 rounded-full"
+                    style={{ backgroundColor: sortedPlayers[0].color }}
+                  />
+                  <span className="max-w-[80px] truncate text-sm font-medium text-white">
+                    {sortedPlayers[0].nickname}
+                    {sortedPlayers[0].id === localPlayerId ? ' (You)' : ''}
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-white">
+                  {Math.floor(sortedPlayers[0].score)}
                 </span>
               </div>
-              <span className="font-mono font-bold text-white">{Math.floor(player.score)}</span>
-            </div>
-          ))}
-        </div>
+            )}
+
+            {/* Local player if not in first place */}
+            {localPlayerId && localPlayerRank > 1 && (
+              <div className="flex items-center justify-between rounded-lg bg-blue-800/40 p-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-xs font-bold">
+                    {localPlayerRank}
+                    {localPlayerRank === 2 ? 'nd' : localPlayerRank === 3 ? 'rd' : 'th'}
+                  </span>
+                  <span
+                    className="h-3 w-3 rounded-full"
+                    style={{ backgroundColor: players[localPlayerId]?.color }}
+                  />
+                  <span className="max-w-[80px] truncate text-sm font-medium text-white">
+                    {players[localPlayerId]?.nickname} (You)
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-white">
+                  {Math.floor(players[localPlayerId]?.score || 0)}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          // Desktop view or menu view - show all players
+          <div className={`${isMobile ? 'grid grid-cols-2 gap-2' : 'space-y-3'}`}>
+            {sortedPlayers.map((player) => (
+              <div
+                key={player.id}
+                className={`flex items-center justify-between rounded-lg ${isMobile ? 'p-1.5' : 'p-2'} ${
+                  player.id === localPlayerId ? 'bg-blue-800/40' : 'bg-gray-800/40'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  {player.isKing && (
+                    <span
+                      className={`flex items-center justify-center rounded-full bg-yellow-500 text-xs ${isMobile ? 'h-4 w-4' : 'h-5 w-5'}`}
+                    >
+                      👑
+                    </span>
+                  )}
+                  <span
+                    className="h-3 w-3 rounded-full"
+                    style={{ backgroundColor: player.color }}
+                  />
+                  <span
+                    className={`${isMobile ? 'text-xs' : 'text-sm'} max-w-[80px] truncate font-medium text-white`}
+                  >
+                    {player.nickname}
+                    {player.id === localPlayerId ? ' (You)' : ''}
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-white">{Math.floor(player.score)}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Target score */}
         <div
