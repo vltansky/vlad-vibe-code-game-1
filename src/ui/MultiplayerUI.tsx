@@ -238,8 +238,7 @@ export function MultiplayerUI() {
                       type="color"
                       value={playerColor}
                       onChange={handleColorChange}
-                      className="h-8 w-12 cursor-pointer appearance-none overflow-hidden rounded-md border border-gray-600 bg-transparent"
-                      style={{ backgroundColor: playerColor }} // Show selected color
+                      className="h-8 w-12 cursor-pointer appearance-none overflow-hidden rounded-md border border-none border-gray-600 bg-transparent outline-none"
                     />
                     <span className="text-xs text-gray-300">{playerColor.toUpperCase()}</span>
                   </div>
