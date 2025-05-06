@@ -24,7 +24,7 @@ export function BombCooldownBar() {
       return;
     }
 
-    const BOMB_COOLDOWN = 10000; // 10 seconds, matching gameStore.ts
+    const BOMB_COOLDOWN = 500; // reasonable cooldown to prevent cheating but still allow aggressive bomb usage
     let animationFrameId: number;
 
     const updateProgress = () => {
