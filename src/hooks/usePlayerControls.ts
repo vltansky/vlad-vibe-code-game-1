@@ -351,15 +351,15 @@ export function usePlayerControls() {
     const impulse = new Vector3();
 
     // Handle keyboard input - invert Z axis for both forward/backward
-    if (forward) impulse.z += MOVEMENT_IMPULSE * delta; // Changed from -= to +=
-    if (backward) impulse.z -= MOVEMENT_IMPULSE * delta; // Changed from += to -=
+    if (forward) impulse.z -= MOVEMENT_IMPULSE * delta; // Reverted back to -=
+    if (backward) impulse.z += MOVEMENT_IMPULSE * delta; // Reverted back to +=
     if (left) impulse.x -= MOVEMENT_IMPULSE * delta;
     if (right) impulse.x += MOVEMENT_IMPULSE * delta;
 
     // Add joystick input - invert Z axis for joystick
     if (joystickDelta.x || joystickDelta.y) {
       impulse.x += joystickDelta.x * MOVEMENT_IMPULSE * delta;
-      impulse.z -= joystickDelta.y * MOVEMENT_IMPULSE * delta; // Changed to -= to match keyboard controls
+      impulse.z -= joystickDelta.y * MOVEMENT_IMPULSE * delta; // Keep mobile controls as they are
     }
 
     // Apply movement impulse if there's any horizontal movement
