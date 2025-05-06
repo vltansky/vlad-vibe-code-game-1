@@ -3,12 +3,20 @@ import { Canvas } from '@react-three/fiber';
 import { Suspense } from 'react';
 import { GameObjects } from './GameObjects';
 import { ACESFilmicToneMapping, PCFSoftShadowMap } from 'three';
+import { useGameStore } from '@/stores/gameStore';
 
 export function Scene() {
+  // Get the connection state to determine if game has started
+  const isConnected = useGameStore((state) => state.isConnected);
+
   return (
     <Canvas
       camera={{ position: [0, 15, 25], fov: 60 }} // Adjusted camera for better map view
-      style={{ background: '#111' }}
+      style={{
+        background: '#111',
+        opacity: isConnected ? 1 : 0.5,
+        transition: 'opacity 0.5s ease',
+      }}
       shadows={{ type: PCFSoftShadowMap }}
       gl={{
         antialias: true,

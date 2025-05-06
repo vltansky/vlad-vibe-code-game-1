@@ -1,5 +1,4 @@
 import { Scene } from './components/Scene';
-import { Gamepad2 } from 'lucide-react';
 import { MultiplayerUI } from './ui/MultiplayerUI';
 import { Scoreboard } from './ui/Scoreboard';
 import { useGameStore } from './stores/gameStore';
