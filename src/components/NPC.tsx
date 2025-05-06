@@ -40,7 +40,6 @@ const _tempVec3 = new Vector3();
 const _direction = new Vector3();
 const _physicsPosition = new Vector3();
 const _cannonForce = new CANNON.Vec3();
-const _cannonPoint = new CANNON.Vec3();
 const _distVector = new Vector3();
 
 type NPCProps = {
