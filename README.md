@@ -1,37 +1,89 @@
-# Three.js React Hackathon Boilerplate
+# Rolling Balls - WebRTC Multiplayer Physics Game
 
-A modern boilerplate for building 3D web applications using React, Three.js, TypeScript, Vite, and shadcn/ui. This project provides a well-structured foundation for hackathons, game jams, or any creative 3D web project.
+A physics-based multiplayer 3D game where players control colorful balls and compete in a King of the Hill style gameplay. Players roll around a dynamic environment, using special abilities to knock opponents off the central platform while trying to maintain control of the King Zone to accumulate points and win.
 
-## 🚀 Features
+## 🎮 Game Overview
 
-- **React 18** with TypeScript
-- **Three.js** integration via React Three Fiber
-- **Cannon.js** for physics
-- **Vite** for fast development and building
-- **shadcn/ui** for beautiful UI components
-- **Tailwind CSS** for styling
-- **ESLint** for code quality
-- **Prettier** for consistent code formatting
-- **Tailwind Class Sorter** for automatically organizing Tailwind classes
+### Core Gameplay
+- **King of the Hill**: Compete to control the center platform (King Zone)
+- **Scoring**: 1 point per second while being the only player in the King Zone
+- **Win Condition**: First player to reach 60 points (1 minute as king) wins
+- **Physics-Based**: Realistic ball movement with friction, collisions, and momentum
+
+### Player Controls
+
+#### Desktop
+- **Movement**: WASD/Arrow keys for directional rolling
+- **Jump**: Spacebar (1-second cooldown)
+- **Bomb Ability**: F key creates a radial explosion pushing nearby players (10-second cooldown)
+- **Push Ability**: P key applies directional force to opponents (4-second cooldown)
+
+#### Mobile
+- **Movement**: Virtual joystick (left side of screen)
+- **Jump**: Dedicated button with visual cooldown indicator
+- **Bomb Ability**: Touch button with cooldown progress ring
+- **Special Abilities**: Touch buttons for all player actions
+- **Responsive Design**: Control sizes adapt to different screen dimensions
+
+### Special Features
+- **Multiplayer**: Real-time gameplay with WebRTC peer-to-peer connections
+- **Cross-Platform**: Seamless play between mobile and desktop devices
+- **Responsive Design**: Fully playable on smartphones and tablets with touch controls
+- **Player Customization**: Various ball skins and colors
+- **Dynamic Environment**: Different surface types (ice, grass, sticky) affecting ball physics
+- **Visual Effects**: Explosion and push effects with particles and screen shake
+
+## 🚀 Technical Implementation
+
+### Tech Stack
+- **Frontend**: React 18, TypeScript, Vite
+- **3D Rendering**: Three.js via React Three Fiber
+- **Physics Engine**: Cannon.js for realistic physics simulation
+- **Networking**: Custom WebRTC implementation with PeerManager
+- **State Management**: Zustand for global game state
+- **UI Components**: shadcn/ui with Tailwind CSS
+- **Development Tools**: ESLint, Prettier, TypeScript
+
+### Core Systems
+
+#### Multiplayer Architecture
+- **WebRTC P2P**: Direct peer-to-peer connections between players
+- **PeerManager**: Custom WebRTC connection management
+- **Signaling Server**: Facilitates initial connections between peers
+- **ICE Servers**: Multiple STUN/TURN fallbacks for NAT traversal
+- **Network Optimization**: Partial state updates to minimize bandwidth
+
+#### Physics System
+- **Cannon.js Integration**: Handles all collision detection and physics calculations
+- **Custom Materials**: Different friction coefficients for varied surfaces
+- **Collision Groups**: Separate collision handling for players, ground, and triggers
+- **Special Abilities**: Physics-based bomb effects and directional pushing
+
+#### Game Mechanics
+- **King Zone Logic**: Tracks player presence in the center zone
+- **Scoring System**: Real-time score accumulation for the king
+- **Cooldown Management**: Tracks and enforces ability cooldowns
+- **Win Condition**: Monitors scores to determine game completion
 
 ## 📦 Project Structure
 
 ```
 src/
-├── components/     # 3D scene components (<SceneCanvas />, <Player />, etc.)
-│   └── ui/         # shadcn/ui primitives
-├── hooks/          # Custom hooks (useControls, useFollowCamera, etc.)
-├── systems/        # Global loop logic (physics, animation, AI)
-├── stores/         # Global state management (Zustand/Jotai)
-├── loaders/        # Asset loading logic
-├── utils/          # Helpers and math utilities
-├── ui/             # High-level UI components (menus, HUD)
-├── shaders/        # Custom GLSL shaders
+├── components/     # Game components (Player, BombEffect, GameMap)
+│   └── ui/         # UI components and primitives
+├── hooks/          # Custom hooks (usePlayerControls, useFollowCamera)
+├── systems/        # Physics and game loop logic
+├── stores/         # Zustand game state management
+├── lib/            # Core utilities and networking
+│   └── networking/ # WebRTC connection handling
+├── ui/             # Game UI (HUD, leaderboard, menus)
 ├── App.tsx         # Main app layout
 └── main.tsx        # Vite entry point
-memory-bank/        # Project documentation and planning
-├── PRD.md          # Product requirements document
-└── plan.md         # Development roadmap and milestone tracking
+memory-bank/        # Project documentation
+├── PRD.md          # Product requirements
+├── game.md         # Game mechanics documentation
+└── plan.md         # Development roadmap
+server/             # Signaling server for WebRTC connections
 ```
 
 ## 🛠️ Getting Started
@@ -42,11 +94,6 @@ memory-bank/        # Project documentation and planning
 - yarn
 
 ### Installation
-
-1. Click the "Use this template" button at the top of this repository
-2. Create a new repository from the template
-
-Or clone manually:
 
 ```bash
 # Clone the repository
@@ -60,7 +107,11 @@ yarn
 ### Development
 
 ```bash
-# Start dev server
+# Start the development server
+yarn dev
+
+# In a separate terminal, start the signaling server
+cd server
 yarn dev
 ```
 
@@ -69,7 +120,34 @@ yarn dev
 ```bash
 # Build for production
 yarn build
+
+# Build the signaling server
+cd server
+yarn build
 ```
+
+## 🎮 Playing the Game
+
+### Desktop
+1. Open the application in your browser
+2. Enter your nickname and a room ID 
+3. Share the room ID with friends to join the same game
+4. Use WASD/Arrow keys to move your ball
+5. Press Space to jump
+6. Use F key for the bomb ability (10-second cooldown)
+7. Use P key for the push ability (4-second cooldown)
+8. Control the center King Zone to accumulate points
+9. First to reach 60 points wins!
+
+### Mobile
+1. Open the application on your mobile browser
+2. Enter your nickname and room ID (same as desktop)
+3. Use the virtual joystick on the left side to control movement
+4. Tap the Jump button to jump
+5. Tap the Bomb button to use your bomb ability
+6. Tap the Push button to use your push ability
+7. The game automatically detects mobile devices and enables touch controls
+8. Visual indicators show ability cooldowns with progress rings
 
 ## 🔄 Multiplayer Server with Redis
 
