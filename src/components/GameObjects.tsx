@@ -42,6 +42,9 @@ export function GameObjects() {
 
   // Track active bomb effects
   const [bombEffects, setBombEffects] = useState<BombEffectData[]>([]);
+  
+  // Add last cleanup timestamp to track when we last cleared all bomb effects
+  const [lastGlobalCleanupTime, setLastGlobalCleanupTime] = useState<number>(Date.now());
 
   // Track NPCs
   const [npcs, setNpcs] = useState<{ id: string; position: Vector3; nickname: string }[]>([]);
@@ -189,7 +192,26 @@ export function GameObjects() {
 
   // Update physics each frame
   useFrame((_, delta) => {
-    updatePhysics(delta);
+    // Skip on the first few frames to let scene initialize
+    if (!isConnected) return;
+
+    // Update physics world - cap delta to prevent large jumps
+    const cappedDelta = Math.min(delta, 0.1);
+    updatePhysics(cappedDelta);
+    
+    // Periodically clean up all bomb effects to prevent them from getting stuck
+    const currentTime = Date.now();
+    const timeSinceLastCleanup = currentTime - lastGlobalCleanupTime;
+    
+    // Clean up all bomb effects every 10 seconds (10000ms)
+    if (timeSinceLastCleanup > 10000) {
+      if (bombEffects.length > 0) {
+        console.log(`[GameObjects] Performing global bomb effect cleanup. Clearing ${bombEffects.length} effects.`, 
+          bombEffects.map(effect => effect.id));
+        setBombEffects([]);
+      }
+      setLastGlobalCleanupTime(currentTime);
+    }
   });
 
   // Add a useEffect to ensure bomb effects are cleaned up even if animation fails
@@ -199,6 +221,25 @@ export function GameObjects() {
         `[GameObjects Global Fallback] Effect RUN. Active effects (${bombEffects.length}):`,
         bombEffects.map((ef) => ef.id)
       );
+      
+      // Check for extremely old bomb effects (older than 10 seconds) and clear them immediately
+      const currentTime = Date.now();
+      const oldBombEffects = bombEffects.filter(
+        effect => (currentTime - effect.sourceTimestamp) > 10000
+      );
+      
+      if (oldBombEffects.length > 0) {
+        console.log(
+          `[GameObjects] Found ${oldBombEffects.length} bomb effects older than 10 seconds. Clearing immediately:`,
+          oldBombEffects.map(e => e.id)
+        );
+        setBombEffects(prev => prev.filter(e => !oldBombEffects.some(oldE => oldE.id === e.id)));
+        // If we cleared some effects, we can return early
+        if (oldBombEffects.length === bombEffects.length) {
+          return;
+        }
+      }
+      
       const BOMB_MAX_LIFETIME = 3000; // 3 seconds max lifetime
 
       const timeouts = bombEffects.map((effect) => {
